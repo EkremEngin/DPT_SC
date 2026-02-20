@@ -1,0 +1,5 @@
+{
+  "name": "DijitalPark Teknokent",
+  "description": "Enterprise-grade Technopark management system. Features dashboard analytics for occupancy, sector distribution, and multi-campus management with strict separation of physical and commercial domains.",
+  "requestFramePermissions": []
+}

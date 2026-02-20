@@ -1,0 +1,102 @@
+
+.folder {
+  transition: all 0.2s ease-in-out;
+  width: 100px;
+  height: 80px;
+  position: relative;
+  cursor: pointer;
+}
+
+.folder__back {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--folder-back-color);
+  border-radius: 0px 8px 8px 8px;
+}
+
+.folder__back::after {
+  position: absolute;
+  bottom: 98%;
+  left: 0;
+  content: "";
+  width: 30px;
+  height: 10px;
+  background: var(--folder-back-color);
+  border-radius: 8px 8px 0 0;
+}
+
+.folder__front {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: var(--folder-color);
+  border-radius: 8px;
+  transform-origin: bottom;
+  transition: all 0.2s ease-in-out;
+  z-index: 10;
+}
+
+.folder__front.right {
+  z-index: 20;
+  opacity: 0.1;
+  background: linear-gradient(to left, #ffffff 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.paper {
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  transform: translate(-50%, 0%);
+  width: 80%;
+  height: 80%;
+  background: var(--paper-3);
+  border-radius: 4px;
+  transition: all 0.2s ease-in-out;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.paper:nth-child(2) {
+  background: var(--paper-2);
+  width: 90%;
+  height: 70%;
+}
+
+.paper:nth-child(1) {
+  background: var(--paper-1);
+  width: 100%;
+  height: 60%;
+}
+
+.folder.open .folder__front {
+  transform: skew(15deg) scaleY(0.6);
+}
+
+.folder.open .paper {
+  transform: translate(
+    calc(-50% + var(--magnet-x)),
+    calc(-20% + var(--magnet-y))
+  );
+  bottom: 20%;
+}
+
+.folder.open .paper:nth-child(1) {
+  transform: translate(
+    calc(-50% + var(--magnet-x)),
+    calc(-25% + var(--magnet-y))
+  ) rotate(-5deg);
+  bottom: 25%;
+}
+
+.folder.open .paper:nth-child(2) {
+  transform: translate(
+    calc(-50% + var(--magnet-x)),
+    calc(-25% + var(--magnet-y))
+  ) rotate(5deg);
+  bottom: 25%;
+}

@@ -1,0 +1,164 @@
+name: Monthly Backup Drill Reminder
+
+on:
+  schedule:
+    # Run on 1st day of each month at 9 AM UTC (12 PM Turkey time)
+    - cron: '0 9 1 * *'
+  workflow_dispatch:  # Allow manual trigger
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  create-drill-reminder:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Get current month
+        id: date
+        run: |
+          echo "month=$(date +'%Y-%m')" >> $GITHUB_OUTPUT
+          echo "full_date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      
+      - name: Check for existing drill issue
+        id: check_issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const month = '${{ steps.date.outputs.month }}';
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'disaster-recovery,monthly-drill'
+            });
+            
+            const existingIssue = issues.data.find(issue => 
+              issue.title.includes(month)
+            );
+            
+            if (existingIssue) {
+              console.log(`Drill issue already exists: ${existingIssue.number}`);
+              return existingIssue.number;
+            }
+            
+            return null;
+      
+      - name: Close previous month's drill issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'disaster-recovery,monthly-drill'
+            });
+            
+            const currentMonth = '${{ steps.date.outputs.month }}';
+            
+            for (const issue of issues.data) {
+              if (!issue.title.includes(currentMonth)) {
+                console.log(`Closing previous drill issue: ${issue.number}`);
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                  labels: ['disaster-recovery', 'monthly-drill', 'completed']
+                });
+              }
+            }
+      
+      - name: Create drill reminder issue
+        if: steps.check_issue.outputs.result == 'null'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const month = '${{ steps.date.outputs.month }}';
+            const date = '${{ steps.date.outputs.full_date }}';
+            
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[REMINDER] Monthly Disaster Recovery Drill - ${month}`,
+              body: `## 🔥 Monthly Disaster Recovery Drill Reminder
+            
+            It's time to perform the monthly disaster recovery drill to ensure our backup and restore procedures are working correctly.
+            
+            ### 📋 Drill Checklist
+            
+            - [ ] **Run backup creation test**
+              \`\`\`bash
+              cd server
+              npm run backup
+              \`\`\`
+            
+            - [ ] **Run restore drill test**
+              \`\`\`bash
+              npm run drill:restore -- --report=../docs/drill-logs/drill-${date}.json
+              \`\`\`
+            
+            - [ ] **Verify drill results**
+              - RTO target met (<15 minutes)
+              - No data integrity issues
+              - No orphaned records
+            
+            - [ ] **Review and update runbook** (if procedures changed)
+              - Check [disaster-recovery-runbook.md](docs/disaster-recovery-runbook.md)
+              - Update any outdated steps
+              - Add lessons learned
+            
+            - [ ] **Update emergency contacts** (if needed)
+              - Verify all contacts are current
+              - Test communication channels
+            
+            - [ ] **Document drill results**
+              - Record restore time
+              - Note any issues encountered
+              - List improvements needed
+            
+            - [ ] **Sign-off by team lead** (@mention team lead)
+            
+            ---
+            
+            ### 📊 Previous Drill Results
+            
+            Check previous drill reports in [\`docs/drill-logs/\`](docs/drill-logs/) directory.
+            
+            ### 📚 Resources
+            
+            - [Disaster Recovery Runbook](docs/disaster-recovery-runbook.md)
+            - [P5.5 Resilience Plan](plans/phase5-5-resilience-dr-plan.md)
+            - [Restore Script](server/src/scripts/restore-database.ts)
+            - [Drill Test Script](server/src/scripts/restore-drill-test.ts)
+            
+            ### ⏰ Timeline
+            
+            - **Created:** ${date}
+            - **Target Completion:** Within 7 days
+            - **Next Drill:** ${new Date(new Date().setMonth(new Date().getMonth() + 2)).toISOString().slice(0, 7)}
+            
+            ---
+            
+            **Priority:** High  
+            **Target RTO:** <15 minutes  
+            **Drill Frequency:** Monthly
+            `,
+              labels: ['maintenance', 'disaster-recovery', 'monthly-drill'],
+              assignees: []  // Add team leads here
+            });
+            
+            console.log(`Created drill reminder issue: ${issue.data.number}`);
+            
+            // Add comment with quick start command
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.data.number,
+              body: `### 🚀 Quick Start\n\nTo run the full drill in one command:\n\n\`\`\`bash\ncd server && npm run backup && npm run drill:restore -- --report=../docs/drill-logs/drill-${date}.json\n\`\`\``
+            });

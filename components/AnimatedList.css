@@ -1,0 +1,56 @@
+
+.scroll-list-container {
+    position: relative;
+    width: 100%;
+    /* Height is now controlled via className prop (e.g. h-[500px]) */
+    overflow: hidden;
+    border-radius: 12px;
+  }
+  
+  .scroll-list {
+    height: 100%;
+    overflow-y: auto;
+    padding: 1rem;
+    padding-bottom: 1.5rem; /* Reduced from 4rem to ~0.5cm visual space */
+    scroll-behavior: smooth;
+  }
+  
+  .scroll-list.no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  .scroll-list.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  /* Item Wrapper Styles */
+  .animated-item-wrapper {
+    transition: all 0.3s ease;
+  }
+  
+  .animated-item-wrapper.selected {
+    transform: scale(1.02);
+  }
+  
+  /* Gradients */
+  .top-gradient,
+  .bottom-gradient {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 60px;
+    pointer-events: none;
+    z-index: 10;
+    transition: opacity 0.3s ease;
+  }
+  
+  .top-gradient {
+    top: 0;
+    background: linear-gradient(to bottom, var(--gradient-bg, rgba(255,255,255,1)) 0%, transparent 100%);
+  }
+  
+  .bottom-gradient {
+    bottom: 0;
+    background: linear-gradient(to top, var(--gradient-bg, rgba(255,255,255,1)) 0%, transparent 100%);
+  }
