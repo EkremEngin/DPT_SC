@@ -95,12 +95,18 @@ router.post('/assign', requireRole(['ADMIN', 'MANAGER']),
                 if (!floorCap) throw { status: 400, message: 'Geçersiz kat.' };
 
                 // Calculate current usage
-                const unitsRes = await client.query('SELECT area_sqm, status FROM units WHERE block_id = $1 AND floor = $2', [blockId, floor]);
+                const unitsRes = await client.query('SELECT area_sqm, status FROM units WHERE block_id = $1 AND floor = $2 AND deleted_at IS NULL', [blockId, floor]);
                 const currentUsed = unitsRes.rows.reduce((sum: number, u: any) =>
                     (u.status === 'OCCUPIED' || u.status === 'RESERVED') ? sum + parseFloat(u.area_sqm) : sum, 0);
 
-                if (currentUsed + areaSqM > floorCap.totalSqM) {
-                    throw { status: 400, message: `Kapasite Aşımı! Kalan m2: ${floorCap.totalSqM - currentUsed}` };
+                const totalNeeded = Math.round((currentUsed + parseFloat(areaSqM)) * 100) / 100;
+                const capacity = Math.round(parseFloat(floorCap.totalSqM) * 100) / 100;
+
+                console.log(`[CAPACITY CHECK] areaSqM=${areaSqM}, currentUsed=${currentUsed}, totalNeeded=${totalNeeded}, capacity=${capacity}`);
+
+                // EPSILON FIX: Allow tiny floating point discrepancies
+                if (totalNeeded > capacity + 0.001) {
+                    throw { status: 400, message: `Kapasite Aşımı! Kalan m2: ${Math.max(0, capacity - currentUsed).toFixed(2)}` };
                 }
 
                 // 2. Get Company
@@ -289,8 +295,8 @@ router.put('/:id', requireRole(['ADMIN', 'MANAGER']),
         body('companyName').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Company name must be 2-100 characters'),
         body('sector').optional().trim().isLength({ min: 2, max: 50 }).withMessage('Sector must be 2-50 characters'),
         body('managerName').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Manager name must be 2-100 characters'),
-        body('managerPhone').optional().matches(/^(\+90|0)?[0-9]{10}$/).withMessage('Must be a valid Turkish phone number'),
-        body('managerEmail').optional().isEmail().withMessage('Must be a valid email address'),
+        body('managerPhone').optional().isString().isLength({ max: 255 }).withMessage('Phone must be a valid string (max 255)'),
+        body('managerEmail').optional().isString().isLength({ max: 255 }).withMessage('Email must be a valid string (max 255)'),
         body('employeeCount').optional().isInt({ min: 0 }).withMessage('Employee count must be a positive integer')
     ]),
     async (req: AuthRequest, res: any) => {

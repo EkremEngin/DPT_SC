@@ -347,8 +347,8 @@ export const Settings: React.FC = () => {
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-bold text-gray-900 truncate">{u.username}</span>
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${u.role === 'ADMIN' ? 'bg-amber-100 text-amber-700' :
-                                u.role === 'MANAGER' ? 'bg-indigo-100 text-indigo-700' :
-                                  'bg-gray-100 text-gray-600'
+                              u.role === 'MANAGER' ? 'bg-indigo-100 text-indigo-700' :
+                                'bg-gray-100 text-gray-600'
                               }`}>{u.role}</span>
                             {u.id === user?.id && <span className="text-[10px] font-bold text-emerald-600">(Sen)</span>}
                           </div>
@@ -390,7 +390,7 @@ export const Settings: React.FC = () => {
                             value={confirmText}
                             onChange={(e) => setConfirmText(e.target.value)}
                             placeholder="ONAYLIYORUM"
-                            className="flex-1 px-3 py-2 text-xs font-bold border-2 border-red-200 rounded-lg outline-none focus:border-red-400 text-gray-900 placeholder:text-red-200"
+                            className="flex-1 px-3 py-2 text-xs font-bold border-2 border-red-200 rounded-lg outline-none focus:border-red-400 text-black placeholder:text-red-200"
                             autoFocus
                           />
                           <button
@@ -407,8 +407,8 @@ export const Settings: React.FC = () => {
                               }
                             }}
                             className={`px-4 py-2 text-xs font-bold rounded-lg transition-all shrink-0 ${confirmText === 'ONAYLIYORUM'
-                                ? 'bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200'
-                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              ? 'bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-200'
+                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                               }`}
                           >
                             Sil

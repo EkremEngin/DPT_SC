@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { api } from '../services/api';
 import { useDebounce } from '../utils/hooks';
-import { Search, MapPin, Layers, Briefcase, Calendar, X, Award, FileText, Upload, Check, Building, Building2, TrendingUp, Users, User, ChevronRight, Hash, Phone, Mail, Paperclip, CloudUpload, DollarSign, LayoutGrid, Plus, Download, Filter, Edit3, Save, AlertTriangle, Calculator, AlertCircle, Minus, Trash2, CheckCircle2, File, MessageSquare, ShieldCheck, Tag, ChevronDown, PlusCircle, Settings, Info, Loader2 } from 'lucide-react';
+import { Search, MapPin, Layers, Briefcase, Calendar, X, Award, FileText, Upload, Check, Building, Building2, TrendingUp, Users, User, ChevronRight, Hash, Phone, Mail, Paperclip, CloudUpload, DollarSign, LayoutGrid, Plus, Download, Filter, Edit3, Save, AlertTriangle, Calculator, AlertCircle, Minus, Trash2, CheckCircle2, File, MessageSquare, ShieldCheck, Tag, ChevronDown, PlusCircle, Settings, Info, Loader2, Image } from 'lucide-react';
 import { Button } from '../components/Button';
 import { Company, Lease, Unit, Block, Campus, LeaseDocument, ExtendedLeaseData } from '../types';
 import AnimatedList from '../components/AnimatedList';
@@ -111,16 +111,23 @@ const RequiredMark = () => (
 // --- SECURITY UTILS ---
 
 const sanitizeFilename = (filename: string) => {
-    return filename.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+    // Sadece işletim sistemleri ve dizin geçişleri için tehlikeli olan karakterleri temizler.
+    // Türkçe karakterleri ve boşlukları orijinal haliyle korur.
+    return filename.replace(/[<>\:"/\\|?*\x00-\x1F]/g, "_");
 };
 
 const validateFileSecurity = (file: File) => {
     const MAX_SIZE = 5 * 1024 * 1024; // 5MB Limit
-    const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx'];
+    const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'];
     const ALLOWED_MIME_TYPES = [
         'application/pdf',
         'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/jpeg',
+        'image/png',
+        'application/zip',
+        'application/x-zip-compressed',
+        'application/octet-stream'
     ];
 
     if (file.size > MAX_SIZE) {
@@ -131,7 +138,7 @@ const validateFileSecurity = (file: File) => {
     const ext = parts.pop()?.toLowerCase();
 
     if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
-        return "Geçersiz dosya uzantısı. Sadece PDF ve Word dosyaları.";
+        return "Geçersiz dosya uzantısı. Sadece PDF, Word, JPG ve PNG dosyaları.";
     }
 
     const dangerousExtensions = ['php', 'exe', 'sh', 'bat', 'js', 'html', 'svg', 'dll', 'jar'];
@@ -143,7 +150,8 @@ const validateFileSecurity = (file: File) => {
         return "Dosya ismi çok uzun.";
     }
 
-    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    // Checking mime-type, but allowing empty on Windows if extension is known
+    if (file.type && !ALLOWED_MIME_TYPES.includes(file.type)) {
         return "Dosya formatı güvenlik politikası ile eşleşmiyor (MIME type mismatch).";
     }
 
@@ -160,11 +168,11 @@ const formatPhoneNumber = (val: string) => {
     raw = raw.slice(0, 10);
 
     if (raw.length > 8) {
-        return `${raw.slice(0, 3)} ${raw.slice(3, 6)} ${raw.slice(6, 8)} ${raw.slice(8)}`;
+        return `${raw.slice(0, 3)} ${raw.slice(3, 6)} ${raw.slice(6, 8)} ${raw.slice(8)} `;
     } else if (raw.length > 6) {
-        return `${raw.slice(0, 3)} ${raw.slice(3, 6)} ${raw.slice(6)}`;
+        return `${raw.slice(0, 3)} ${raw.slice(3, 6)} ${raw.slice(6)} `;
     } else if (raw.length > 3) {
-        return `${raw.slice(0, 3)} ${raw.slice(3)}`;
+        return `${raw.slice(0, 3)} ${raw.slice(3)} `;
     } else {
         return raw;
     }
@@ -287,6 +295,14 @@ const AddLeaseModal: React.FC<{ onClose: () => void; onSuccess: () => void; }> =
             const finalEmail = formData.secManagerEmail
                 ? `${formData.managerEmail} | ${formData.secManagerEmail}`
                 : formData.managerEmail;
+
+            if (formData.sector) {
+                try {
+                    await api.addSector(formData.sector);
+                } catch (e) {
+                    // Ignore error if sector already exists
+                }
+            }
 
             await api.registerCompany({
                 name: sanitizeInput(formData.companyName),
@@ -528,7 +544,7 @@ const DeleteConfirmModal: React.FC<{ isOpen: boolean; title: string; onClose: ()
 
                 <input
                     type="text"
-                    className="w-full p-3 border-2 border-gray-200 rounded-xl text-center font-bold text-gray-800 focus:border-rose-500 focus:outline-none mb-6 uppercase"
+                    className="w-full p-3 border-2 border-gray-200 rounded-xl text-center font-bold text-black focus:border-rose-500 focus:outline-none mb-6 uppercase"
                     placeholder="ONAYLIYORUM"
                     value={confirmText}
                     onChange={(e) => setConfirmText(e.target.value)}
@@ -653,6 +669,14 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
         value: string;
     } | null>(null);
 
+    const [businessAreaList, setBusinessAreaList] = useState<string[]>([]);
+    const [isLoadingBusinessAreas, setIsLoadingBusinessAreas] = useState(false);
+    const [businessAreaConfirm, setBusinessAreaConfirm] = useState<{
+        isOpen: boolean;
+        type: 'ADD' | 'DELETE';
+        value: string;
+    } | null>(null);
+
     useEffect(() => {
         const fetchSectors = async () => {
             setIsLoadingSectors(true);
@@ -666,8 +690,21 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                 setIsLoadingSectors(false);
             }
         };
+        const fetchBusinessAreas = async () => {
+            setIsLoadingBusinessAreas(true);
+            try {
+                const data = await api.getBusinessAreas();
+                setBusinessAreaList(data || []);
+            } catch (err) {
+                console.error('Failed to fetch business areas:', err);
+                setBusinessAreaList([]);
+            } finally {
+                setIsLoadingBusinessAreas(false);
+            }
+        };
         fetchSectors();
-    }, [isEditMode, sectorConfirm]);
+        fetchBusinessAreas();
+    }, [isEditMode, sectorConfirm, businessAreaConfirm]);
 
     const isoToDisplay = (iso: string) => {
         if (!iso || isNaN(new Date(iso).getTime())) return '';
@@ -701,7 +738,7 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
     const handleSaveCompanyInfo = async () => {
         try {
             if (editFormData.sector) {
-                await api.addSector(editFormData.sector);
+                try { await api.addSector(editFormData.sector); } catch { /* sector may already exist */ }
             }
             await api.updateCompany(data.company.id, {
                 name: sanitizeInput(editFormData.name),
@@ -727,6 +764,7 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
 
             setIsEditMode(false);
             onUpdate();
+            triggerDataChange('company', 'update');
         } catch (err: any) {
             console.error(err);
             alert('Güncelleme sırasında bir hata oluştu: ' + (err.message || ''));
@@ -763,23 +801,29 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
 
     const handleConfirmSectorAction = async (cascade: boolean = false) => {
         if (!sectorConfirm) return;
-        if (sectorConfirm.type === 'ADD') {
-            await api.addSector(sectorConfirm.value);
-            setEditFormData({ ...editFormData, sector: sectorConfirm.value });
-            const sectors = await api.getSectors();
-            setSectorList(sectors || []);
-            setSectorConfirm(null);
-        } else if (sectorConfirm.type === 'DELETE') {
-            setSectorConfirm({ ...sectorConfirm, type: 'DELETE_CASCADE' });
-        } else if (sectorConfirm.type === 'DELETE_CASCADE') {
-            await api.deleteSector(sectorConfirm.value, cascade);
-            const sectors = await api.getSectors();
-            setSectorList(sectors || []);
-            if (editFormData.sector === sectorConfirm.value) {
-                setEditFormData(prev => ({ ...prev, sector: 'Belirtilmedi' }));
+        try {
+            if (sectorConfirm.type === 'ADD') {
+                await api.addSector(sectorConfirm.value);
+                setEditFormData({ ...editFormData, sector: sectorConfirm.value });
+                const sectors = await api.getSectors();
+                setSectorList(sectors || []);
+                setSectorConfirm(null);
+            } else if (sectorConfirm.type === 'DELETE') {
+                setSectorConfirm({ ...sectorConfirm, type: 'DELETE_CASCADE' });
+            } else if (sectorConfirm.type === 'DELETE_CASCADE') {
+                await api.deleteSector(sectorConfirm.value, cascade);
+                const sectors = await api.getSectors();
+                setSectorList(sectors || []);
+                if (editFormData.sector === sectorConfirm.value) {
+                    setEditFormData(prev => ({ ...prev, sector: 'Belirtilmedi' }));
+                }
+                setSectorConfirm(null);
+                onUpdate();
             }
+        } catch (err: any) {
+            console.error('Sector action failed:', err);
+            alert('Sektör işlemi başarısız oldu: ' + (err.message || 'Bilinmeyen hata'));
             setSectorConfirm(null);
-            onUpdate();
         }
     };
 
@@ -788,10 +832,19 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
     const [sectorDeleteStep, setSectorDeleteStep] = useState<1 | 2>(1);
     const [sectorToDelete, setSectorToDelete] = useState<string | null>(null);
 
+    const [businessAreaSearch, setBusinessAreaSearch] = useState('');
+    const [isBusinessAreaEditMode, setIsBusinessAreaEditMode] = useState(false);
+    const [businessAreaToDelete, setBusinessAreaToDelete] = useState<string | null>(null);
+
     const filteredSectors = useMemo(() => {
         if (!sectorSearch) return sectorList;
         return sectorList.filter(s => s.toLowerCase().includes(sectorSearch.toLowerCase()));
     }, [sectorList, sectorSearch]);
+
+    const filteredBusinessAreas = useMemo(() => {
+        if (!businessAreaSearch) return businessAreaList;
+        return businessAreaList.filter(s => s.toLowerCase().includes(businessAreaSearch.toLowerCase()));
+    }, [businessAreaList, businessAreaSearch]);
 
     const handleToggleBusinessArea = (tag: string) => {
         if (isSectorEditMode) return;
@@ -851,6 +904,36 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
         onUpdate(); // Update lists
     };
 
+    const handleAddBusinessArea = async () => {
+        if (!businessAreaSearch) return;
+        await api.addBusinessArea(businessAreaSearch);
+        const areas = await api.getBusinessAreas();
+        setBusinessAreaList(areas || []);
+        setBusinessAreaSearch('');
+    };
+
+    const initiateDeleteBusinessArea = (area: string) => {
+        setBusinessAreaConfirm({ isOpen: true, type: 'DELETE', value: area });
+    };
+
+    const handleConfirmBusinessAreaAction = async () => {
+        if (!businessAreaConfirm) return;
+        if (businessAreaConfirm.type === 'ADD') {
+            await api.addBusinessArea(businessAreaConfirm.value);
+            setEditFormData(prev => ({ ...prev, businessAreas: [...(prev.businessAreas || []), businessAreaConfirm.value] }));
+            const areas = await api.getBusinessAreas();
+            setBusinessAreaList(areas || []);
+            setBusinessAreaConfirm(null);
+        } else if (businessAreaConfirm.type === 'DELETE') {
+            await api.deleteBusinessArea(businessAreaConfirm.value);
+            const areas = await api.getBusinessAreas();
+            setBusinessAreaList(areas || []);
+            setEditFormData(prev => ({ ...prev, businessAreas: prev.businessAreas?.filter(a => a !== businessAreaConfirm.value) }));
+            setBusinessAreaConfirm(null);
+            onUpdate();
+        }
+    };
+
     const handleAddScore = async () => {
         if (!newScore.desc || newScore.points === 0) return;
         const sanitizedNote = sanitizeInput(scoreNote);
@@ -893,10 +976,15 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
         const reader = new FileReader();
         reader.onload = (event) => {
             const fileDataUrl = event.target?.result as string;
+
+            const ext = file.name.split('.').pop()?.toLowerCase() || '';
+            const isImage = file.type.includes('image') || ['jpg', 'jpeg', 'png'].includes(ext);
+            const isPdf = file.type.includes('pdf') || ext === 'pdf';
+
             const newDoc = {
                 name: sanitizedName,
                 url: fileDataUrl,
-                type: file.type.includes('pdf') ? 'PDF' : 'WORD'
+                type: isImage ? 'IMAGE' : isPdf ? 'PDF' : 'WORD'
             };
             setNewScoreDocuments(prev => [...prev, newDoc]);
         };
@@ -926,10 +1014,15 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
         const reader = new FileReader();
         reader.onload = async (event) => {
             const fileDataUrl = event.target?.result as string;
+
+            const ext = file.name.split('.').pop()?.toLowerCase() || '';
+            const isImage = file.type.includes('image') || ['jpg', 'jpeg', 'png'].includes(ext);
+            const isPdf = file.type.includes('pdf') || ext === 'pdf';
+
             const newDoc = {
                 name: sanitizedName,
                 url: fileDataUrl,
-                type: file.type.includes('pdf') ? 'PDF' : 'WORD'
+                type: isImage ? 'IMAGE' : isPdf ? 'PDF' : 'WORD'
             };
             if (data.lease.id === 'PENDING') {
                 await api.addDocument(data.company.id, newDoc, true);
@@ -942,13 +1035,34 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
         reader.readAsDataURL(file);
     };
 
-    const handleDownload = (doc: { url: string, name: string }) => {
-        const link = document.createElement('a');
-        link.href = doc.url;
-        link.download = doc.name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    const handleDownload = async (doc: { url: string, name: string }) => {
+        try {
+            if (doc.url.startsWith('data:')) {
+                // Convert data URL to Blob to preserve original filename on all browsers
+                const fetchRes = await fetch(doc.url);
+                const blob = await fetchRes.blob();
+                const objectUrl = URL.createObjectURL(blob);
+
+                const link = document.createElement('a');
+                link.href = objectUrl;
+                link.download = doc.name;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                setTimeout(() => URL.revokeObjectURL(objectUrl), 100);
+            } else {
+                const link = document.createElement('a');
+                link.href = doc.url;
+                link.download = doc.name;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        } catch (error) {
+            console.error('Download failed:', error);
+            alert('Dosya indirilirken bir hata oluştu.');
+        }
     };
 
     const handleDeleteContractClick = (docName: string) => {
@@ -1105,11 +1219,11 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                         <span className="font-bold text-gray-800 text-sm">İş Alanı Yönetimi</span>
                                     </div>
                                     <button
-                                        onClick={() => setIsSectorEditMode(!isSectorEditMode)}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${isSectorEditMode ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                                        onClick={() => setIsBusinessAreaEditMode(!isBusinessAreaEditMode)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all ${isBusinessAreaEditMode ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                                     >
                                         <Settings className="w-3.5 h-3.5" />
-                                        {isSectorEditMode ? 'Düzenlemeyi Bitir' : 'Etiketleri Düzenle'}
+                                        {isBusinessAreaEditMode ? 'Düzenlemeyi Bitir' : 'Etiketleri Düzenle'}
                                     </button>
                                 </div>
                                 <div className="p-4 bg-white/50 backdrop-blur-sm">
@@ -1119,13 +1233,13 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                             type="text"
                                             placeholder="İş alanı ara veya yeni ekle..."
                                             className="w-full pl-9 pr-4 py-2.5 bg-white border border-indigo-100 rounded-xl text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all shadow-sm placeholder-gray-400"
-                                            value={sectorSearch}
-                                            onChange={(e) => setSectorSearch(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && handleAddSector()}
+                                            value={businessAreaSearch}
+                                            onChange={(e) => setBusinessAreaSearch(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleAddBusinessArea()}
                                         />
-                                        {sectorSearch && (
+                                        {businessAreaSearch && (
                                             <button
-                                                onClick={handleAddSector}
+                                                onClick={handleAddBusinessArea}
                                                 className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg transition-colors shadow-sm flex items-center gap-1"
                                             >
                                                 <Plus className="w-3 h-3" /> Ekle
@@ -1134,17 +1248,17 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                     </div>
 
                                     <div className="flex flex-wrap gap-3 max-h-[300px] overflow-y-auto p-1 pr-2 custom-scrollbar content-start">
-                                        {filteredSectors.map((sector) => {
-                                            const isSelected = editFormData.businessAreas?.includes(sector);
+                                        {filteredBusinessAreas.map((area) => {
+                                            const isSelected = editFormData.businessAreas?.includes(area);
                                             return (
                                                 <motion.button
-                                                    key={sector}
+                                                    key={area}
                                                     initial={{ opacity: 0, scale: 0.95 }}
                                                     animate={{ opacity: 1, scale: 1 }}
-                                                    onClick={(e: React.MouseEvent) => isSectorEditMode ? initiateDeleteSector(sector) : handleToggleBusinessArea(sector)}
+                                                    onClick={(e: React.MouseEvent) => isBusinessAreaEditMode ? initiateDeleteBusinessArea(area) : handleToggleBusinessArea(area)}
                                                     className={`
                                                         relative px-3 py-2.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 group text-left max-w-full shadow-sm
-                                                        ${isSectorEditMode
+                                                        ${isBusinessAreaEditMode
                                                             ? 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100 cursor-pointer'
                                                             : isSelected
                                                                 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 ring-2 ring-emerald-500 ring-offset-1 z-10'
@@ -1152,21 +1266,22 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                                         }
                                                     `}
                                                 >
-                                                    {isSectorEditMode ? (
-                                                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                                                    <div className="flex-1 truncate">{area}</div>
+                                                    {isBusinessAreaEditMode ? (
+                                                        <Trash2 className="w-4 h-4 opacity-50 group-hover:opacity-100" />
+                                                    ) : isSelected ? (
+                                                        <Check className="w-4 h-4" />
                                                     ) : (
-                                                        isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                                                        <Plus className="w-4 h-4 opacity-50 group-hover:opacity-100" />
                                                     )}
-                                                    <span className="truncate leading-none py-0.5">{sector}</span>
                                                 </motion.button>
                                             );
-                                        })}
-                                        {filteredSectors.length === 0 && (
+                                        })}{filteredBusinessAreas.length === 0 && (
                                             <div className="w-full text-center py-4">
                                                 <p className="text-gray-400 text-xs italic">Aramanızla eşleşen iş alanı bulunamadı.</p>
-                                                {sectorSearch && (
-                                                    <button onClick={handleAddSector} className="mt-2 text-indigo-600 text-xs font-bold hover:underline">
-                                                        "{sectorSearch}" ekle
+                                                {businessAreaSearch && (
+                                                    <button onClick={handleAddBusinessArea} className="mt-2 text-indigo-600 text-xs font-bold hover:underline">
+                                                        "{businessAreaSearch}" ekle
                                                     </button>
                                                 )}
                                             </div>
@@ -1552,7 +1667,7 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                         <>
                                             <input
                                                 type="file"
-                                                accept=".pdf,.doc,.docx"
+                                                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                                                 className={`absolute inset-0 w-full h-full opacity-0 ${documents.length >= 4 ? 'cursor-not-allowed' : 'cursor-pointer'}`}
                                                 onChange={handleFileUpload}
                                                 disabled={documents.length >= 4}
@@ -1561,7 +1676,7 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                             <p className={`text-sm font-bold ${documents.length >= 4 ? 'text-gray-500' : 'text-indigo-900'}`}>
                                                 {documents.length >= 4 ? 'Maksimum 4 dosya yüklenebilir' : 'Dosyayı buraya sürükleyin veya seçin'}
                                             </p>
-                                            <p className="text-[10px] text-gray-400 mt-1 font-medium">PDF, Word (.doc, .docx) - Maks. 5MB</p>
+                                            <p className="text-[10px] text-gray-400 mt-1 font-medium">PDF, Word (.doc, .docx) veya Görsel (.jpg, .png) - Maks. 5MB</p>
                                         </>
                                     )}
                                 </div>
@@ -1578,12 +1693,12 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                     {documents.length > 0 ? documents.map((doc, idx) => (
                                         <div key={idx} className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-200 shadow-sm hover:border-indigo-200 transition-colors group">
                                             <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className={`p-2 rounded-lg shrink-0 ${doc.type === 'PDF' ? 'bg-rose-50 text-rose-600' : 'bg-blue-50 text-blue-600'}`}>
-                                                    {doc.type === 'PDF' ? <FileText className="w-4 h-4" /> : <File className="w-4 h-4" />}
+                                                <div className={`p-2 rounded-lg shrink-0 ${doc.type === 'PDF' ? 'bg-rose-50 text-rose-600' : doc.type === 'IMAGE' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'}`}>
+                                                    {doc.type === 'PDF' ? <FileText className="w-4 h-4" /> : doc.type === 'IMAGE' ? <Image className="w-4 h-4" /> : <File className="w-4 h-4" />}
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="text-xs font-bold text-gray-900 truncate">{doc.name}</div>
-                                                    <div className="text-[9px] font-bold text-gray-400 uppercase">{doc.type} Dosyası • {new Date().toLocaleDateString('tr-TR')}</div>
+                                                    <div className="text-[9px] font-bold text-gray-400 uppercase">{doc.type === 'IMAGE' ? 'GÖRSEL' : doc.type} Dosyası • {new Date().toLocaleDateString('tr-TR')}</div>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1912,6 +2027,32 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                         </div>
                     </div>
                 )}
+                {businessAreaConfirm && businessAreaConfirm.isOpen && (
+                    <div className="absolute inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm border border-gray-200 scale-100 animate-in zoom-in-95">
+                            <div className="flex flex-col items-center text-center">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-4 border ${businessAreaConfirm.type === 'ADD' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>
+                                    {businessAreaConfirm.type === 'ADD' ? <Plus className="w-6 h-6" /> : <Trash2 className="w-6 h-6" />}
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-900 mb-1">
+                                    {businessAreaConfirm.type === 'ADD' ? 'İş Alanı Eklensin mi?' : 'İş Alanı Silinsin mi?'}
+                                </h3>
+                                <p className="text-xs font-medium text-gray-500 mb-6 px-2">
+                                    <span className="font-black text-gray-800">"{businessAreaConfirm.value}"</span>
+                                    {businessAreaConfirm.type === 'ADD'
+                                        ? ' iş alanını listeye eklemek istediğinize emin misiniz?'
+                                        : ' iş alanını sistemden silmek istediğinize emin misiniz? (Firmalardan silinmeyecektir)'}
+                                </p>
+                                <div className="flex gap-3 w-full">
+                                    <Button variant="ghost" onClick={() => setBusinessAreaConfirm(null)} className="flex-1 font-bold text-gray-600">Vazgeç</Button>
+                                    <Button onClick={() => handleConfirmBusinessAreaAction()} className={`flex-1 font-bold text-white ${businessAreaConfirm.type === 'ADD' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
+                                        {businessAreaConfirm.type === 'ADD' ? 'Evet, Ekle' : 'Evet, Sil'}
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </motion.div >
         </div >,
         document.body
@@ -2088,7 +2229,22 @@ export const LeasingManagement: React.FC = () => {
         return [{ value: 'ALL', label: 'Tüm Bloklar' }, ...filteredBlocks.map(b => ({ value: b.id, label: b.name }))];
     }, [filterCampus, blocks]);
 
-    const floorOptions = [{ value: 'ALL', label: 'Tüm Katlar' }, { value: '1', label: '1. Kat' }, { value: '2', label: '2. Kat' }, { value: '3', label: '3. Kat' }]; // Simplified
+    const floorOptions = useMemo(() => {
+        let relevantBlocks = blocks;
+        if (filterCampus !== 'ALL') relevantBlocks = relevantBlocks.filter(b => b.campusId === filterCampus);
+        if (filterBlock !== 'ALL') relevantBlocks = relevantBlocks.filter(b => b.id === filterBlock);
+
+        const uniqueFloors = new Set<string>();
+        relevantBlocks.forEach(b => {
+            if (b.floorCapacities) {
+                b.floorCapacities.forEach(f => uniqueFloors.add(f.floor));
+            }
+        });
+
+        const sortedFloors = Array.from(uniqueFloors).sort(sortFloors);
+        return [{ value: 'ALL', label: 'Tüm Katlar' }, ...sortedFloors.map(f => ({ value: f, label: `${f}. Kat` }))];
+    }, [blocks, filterCampus, filterBlock]);
+
     const sectorOptions = useMemo(() => [{ value: 'ALL', label: 'Tüm Sektörler' }, ...sectors.map(s => ({ value: s, label: s }))], [sectors]);
     const statusOptions = [{ value: 'ALL', label: 'Tüm Durumlar' }, { value: 'ALLOCATED', label: 'Tahsis Edildi' }, { value: 'UNALLOCATED', label: 'Tahsis Edilmedi' }];
 
@@ -2207,11 +2363,11 @@ export const LeasingManagement: React.FC = () => {
                 <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 p-4 shadow-sm grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
                     <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Kampüs</label>
-                        <Dropdown options={campusOptions} value={filterCampus} onChange={(val) => { setFilterCampus(val); setFilterBlock('ALL'); }} icon={<MapPin size={14} />} className="text-xs" />
+                        <Dropdown options={campusOptions} value={filterCampus} onChange={(val) => { setFilterCampus(val); setFilterBlock('ALL'); setFilterFloor('ALL'); }} icon={<MapPin size={14} />} className="text-xs" />
                     </div>
                     <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Blok</label>
-                        <Dropdown options={blockOptions} value={filterBlock} onChange={setFilterBlock} icon={<Building size={14} />} className="text-xs" disabled={filterCampus === 'ALL' && blockOptions.length <= 1} />
+                        <Dropdown options={blockOptions} value={filterBlock} onChange={(val) => { setFilterBlock(val); setFilterFloor('ALL'); }} icon={<Building size={14} />} className="text-xs" disabled={filterCampus === 'ALL' && blockOptions.length <= 1} />
                     </div>
                     <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Kat</label>

@@ -22,7 +22,7 @@ export interface PaginatedResponse<T> {
  */
 export function getPaginationParams(req: Request): PaginationParams {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const limit = Math.min(10000, Math.max(1, parseInt(req.query.limit as string) || 50));
     const offset = (page - 1) * limit;
 
     return { page, limit, offset };

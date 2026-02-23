@@ -9,6 +9,7 @@ import { body } from 'express-validator';
 import { getPaginationParams, getSqlPagination } from '../utils/pagination';
 import { cacheConfig } from '../middleware/cacheMiddleware';
 import { createLoggerWithReq } from '../utils/logger';
+import { validateBase64File } from '../utils/fileValidation';
 
 const router = Router();
 
@@ -156,8 +157,8 @@ router.post('/', requireRole(['ADMIN', 'MANAGER']),
         body('sector').trim().isLength({ min: 2, max: 50 }).withMessage('Sector must be 2-50 characters'),
         body('workArea').optional().trim(),
         body('managerName').trim().isLength({ min: 2, max: 100 }).withMessage('Manager name must be 2-100 characters'),
-        body('managerPhone').optional().matches(/^(\+90|0)?[0-9]{10}$/).withMessage('Must be a valid Turkish phone number'),
-        body('managerEmail').optional().isEmail().withMessage('Must be a valid email address'),
+        body('managerPhone').optional().isString().isLength({ max: 255 }).withMessage('Phone must be a valid string (max 255)'),
+        body('managerEmail').optional().isString().isLength({ max: 255 }).withMessage('Email must be a valid string (max 255)'),
         body('employeeCount').optional().isInt({ min: 0 }).withMessage('Employee count must be a positive integer')
     ]),
     async (req: AuthRequest, res: any) => {
@@ -222,8 +223,8 @@ router.put('/:id', requireRole(['ADMIN', 'MANAGER']),
         body('name').optional({ checkFalsy: true }).trim().isLength({ min: 2, max: 100 }).withMessage('Company name must be 2-100 characters'),
         body('sector').optional({ checkFalsy: true }).trim().isLength({ min: 2, max: 50 }).withMessage('Sector must be 2-50 characters'),
         body('managerName').optional({ checkFalsy: true }).trim().isLength({ min: 2, max: 100 }).withMessage('Manager name must be 2-100 characters'),
-        body('managerPhone').optional({ checkFalsy: true }).trim().matches(/^(\+90|0)?[0-9]{10}$/).withMessage('Must be a valid Turkish phone number'),
-        body('managerEmail').optional({ checkFalsy: true }).trim().isEmail().withMessage('Must be a valid email address'),
+        body('managerPhone').optional({ checkFalsy: true }).trim().isString().isLength({ max: 255 }).withMessage('Phone must be a valid string (max 255)'),
+        body('managerEmail').optional({ checkFalsy: true }).trim().isString().isLength({ max: 255 }).withMessage('Email must be a valid string (max 255)'),
         body('employeeCount').optional({ checkFalsy: true }).isInt({ min: 0 }).withMessage('Employee count must be a positive integer')
     ]),
     async (req: AuthRequest, res: any) => {
@@ -254,7 +255,7 @@ router.put('/:id', requireRole(['ADMIN', 'MANAGER']),
                 manager_phone = COALESCE($4, manager_phone),
                 manager_email = COALESCE($5, manager_email),
                 employee_count = COALESCE($6, employee_count),
-                business_areas = COALESCE($7, business_areas)
+                business_areas = COALESCE($7::text[], business_areas)
              WHERE id = $8 AND deleted_at IS NULL`,
                 [
                     updates.name,
@@ -288,12 +289,18 @@ router.put('/:id', requireRole(['ADMIN', 'MANAGER']),
 router.post('/:id/documents', requireRole(['ADMIN', 'MANAGER']),
     validate([
         body('name').trim().isLength({ min: 1, max: 255 }).withMessage('Document name is required'),
-        body('url').trim().isLength({ min: 1, max: 1000 }).withMessage('Document URL is required'),
+        body('url').isString().withMessage('Document URL is required'),
         body('type').optional().trim().isLength({ max: 50 })
     ]),
     async (req: AuthRequest, res: any) => {
         const { id } = req.params;
         const { name, url, type } = req.body;
+
+        const validation = validateBase64File(url);
+        if (!validation.isValid) {
+            return res.status(400).json({ error: validation.error });
+        }
+
         try {
             const companyRes = await query('SELECT * FROM companies WHERE id = $1 AND deleted_at IS NULL', [id]);
             if (companyRes.rows.length === 0) return res.status(404).json({ error: 'Company not found' });
@@ -354,7 +361,10 @@ router.post('/:id/scores', requireRole(['ADMIN', 'MANAGER']),
         body('description').optional().trim().isLength({ max: 500 }),
         body('points').isFloat({ min: -100, max: 100 }).withMessage('Points must be between -100 and 100'),
         body('note').optional().trim().isLength({ max: 1000 }),
-        body('documents').optional().isArray()
+        body('documents').optional().isArray(),
+        body('documents.*.name').optional().isString().isLength({ max: 255 }),
+        body('documents.*.url').optional().isString(),
+        body('documents.*.type').optional().isString().isLength({ max: 50 })
     ]),
     async (req: AuthRequest, res: any) => {
         const { id } = req.params;
@@ -362,6 +372,17 @@ router.post('/:id/scores', requireRole(['ADMIN', 'MANAGER']),
         try {
             const companyRes = await query('SELECT * FROM companies WHERE id = $1 AND deleted_at IS NULL', [id]);
             if (companyRes.rows.length === 0) return res.status(404).json({ error: 'Company not found' });
+
+            if (documents && Array.isArray(documents)) {
+                for (const doc of documents) {
+                    if (doc.url) {
+                        const validation = validateBase64File(doc.url);
+                        if (!validation.isValid) {
+                            return res.status(400).json({ error: `Document validation failed for '${doc.name || 'untitled'}': ${validation.error}` });
+                        }
+                    }
+                }
+            }
 
             const result = await query(
                 `INSERT INTO company_score_entries (company_id, type, description, points, note, documents)

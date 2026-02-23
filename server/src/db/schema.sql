@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS blocks (
     default_operating_fee NUMERIC(10, 2) DEFAULT 400,
     sqm_per_employee NUMERIC(5, 2) DEFAULT 5.0,
     floor_capacities JSONB DEFAULT '[]', -- Stores array of { floor: string, totalSqM: number }
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 );
 
 -- Companies
@@ -54,6 +55,13 @@ CREATE TABLE IF NOT EXISTS sectors (
     deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 );
 
+CREATE TABLE IF NOT EXISTS business_areas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) UNIQUE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
+);
+
 -- Score Entries (History of company scores)
 CREATE TABLE IF NOT EXISTS company_score_entries (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -63,7 +71,8 @@ CREATE TABLE IF NOT EXISTS company_score_entries (
     points NUMERIC(5, 2) NOT NULL,
     date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     note TEXT,
-    documents JSONB DEFAULT '[]'
+    documents JSONB DEFAULT '[]',
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 );
 
 -- Company Documents
@@ -73,7 +82,8 @@ CREATE TABLE IF NOT EXISTS company_documents (
     name VARCHAR(255) NOT NULL,
     url TEXT NOT NULL,
     type VARCHAR(50),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 );
 
 -- Units (Offices)
@@ -89,7 +99,8 @@ CREATE TABLE IF NOT EXISTS units (
     reservation_company_id UUID REFERENCES companies(id) ON DELETE SET NULL,
     reservation_fee NUMERIC(10, 2),
     reserved_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 );
 
 -- Leases (Contracts)
@@ -138,6 +149,7 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL DEFAULT 'VIEWER', -- ADMIN, MANAGER, VIEWER
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP WITH TIME ZONE DEFAULT NULL
 );
 

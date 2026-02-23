@@ -9,10 +9,10 @@ import { cacheConfig } from '../middleware/cacheMiddleware';
 
 const router = Router();
 
-// GET all campuses with static caching (5 minutes - rarely changes)
-router.get('/', cacheConfig.static, async (req, res) => {
+// GET all campuses with no caching to ensure real-time updates after mutations
+router.get('/', cacheConfig.noCache, async (req, res) => {
     try {
-        const result = await query('SELECT * FROM campuses WHERE deleted_at IS NULL ORDER BY name');
+        const result = await query('SELECT * FROM campuses WHERE deleted_at IS NULL ORDER BY created_at');
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: 'Database error' });
@@ -32,6 +32,12 @@ router.post('/', requireRole(['ADMIN', 'MANAGER']),
     async (req: AuthRequest, res: any) => {
         const { name, address, maxOfficeCap, maxAreaCap, maxFloorsCap } = req.body;
         try {
+            // Check for duplicate campus name
+            const existing = await query('SELECT id FROM campuses WHERE name = $1 AND deleted_at IS NULL', [name]);
+            if (existing.rows.length > 0) {
+                return res.status(400).json({ error: 'Bu isimde bir kampüs zaten mevcut.' });
+            }
+
             const result = await query(
                 `INSERT INTO campuses (name, address, max_office_cap, max_area_cap, max_floors_cap)
              VALUES ($1, $2, $3, $4, $5)

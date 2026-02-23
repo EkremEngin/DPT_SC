@@ -6,7 +6,7 @@ import { createLoggerWithReq } from '../utils/logger';
 const router = Router();
 
 // Apply semi-static caching (1 minute) to dashboard data
-router.get('/', cacheConfig.semiStatic, async (req, res) => {
+router.get('/', async (req, res) => {
     const { campusId } = req.query;
 
     try {

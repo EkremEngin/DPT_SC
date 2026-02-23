@@ -1,0 +1,30 @@
+[
+  {
+    "id": "ffebdb81-cc82-448f-8ad6-54441fefcfea",
+    "unit_id": "3b08f8fb-e215-4a22-b8ce-c36802dca176",
+    "company_id": "0d5305ba-4ab4-4865-954b-ce99fcd6e248",
+    "start_date": "2026-02-21T21:00:00.000Z",
+    "end_date": "2027-02-21T21:00:00.000Z",
+    "monthly_rent": "517000.00",
+    "operating_fee": null,
+    "contract_url": null,
+    "documents": [],
+    "unit_price_per_sqm": "0.00",
+    "created_at": "2026-02-22T12:24:12.576Z",
+    "deleted_at": null
+  },
+  {
+    "id": "fec6676d-2c1e-41f7-83c5-d70b9c3082d6",
+    "unit_id": "a0fd1512-91a9-447f-869f-deace8b1a09a",
+    "company_id": "5e044245-1ff9-4651-b2f9-a7bd1e3db68d",
+    "start_date": "2026-02-21T21:00:00.000Z",
+    "end_date": "2027-02-21T21:00:00.000Z",
+    "monthly_rent": "0.00",
+    "operating_fee": null,
+    "contract_url": null,
+    "documents": [],
+    "unit_price_per_sqm": "0.00",
+    "created_at": "2026-02-22T12:24:12.576Z",
+    "deleted_at": null
+  }
+]

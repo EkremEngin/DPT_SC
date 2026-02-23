@@ -7,6 +7,7 @@ import { validate } from '../middleware/validationMiddleware';
 import { body } from 'express-validator';
 import { getPaginationParams, getSqlPagination } from '../utils/pagination';
 import { createLoggerWithReq } from '../utils/logger';
+import { validateBase64File } from '../utils/fileValidation';
 
 const router = Router();
 
@@ -139,14 +140,17 @@ router.get('/details', async (req, res) => {
 
             // Reconstructing here to minimize frontend breakage:
             if (!lease && company.contractTemplate) {
+                const area = row.area_sqm ? parseFloat(row.area_sqm) : 0;
+                const rentPerSqM = parseFloat(company.contractTemplate.rentPerSqM || 0);
+
                 lease = {
                     id: 'PENDING',
-                    unitId: '',
+                    unitId: row.unit_id || '',
                     companyId: company.id,
                     startDate: company.contractTemplate.startDate,
                     endDate: company.contractTemplate.endDate,
-                    monthlyRent: company.contractTemplate.rentPerSqM,
-                    unitPricePerSqm: company.contractTemplate.rentPerSqM,
+                    monthlyRent: area > 0 ? (area * rentPerSqM) : rentPerSqM,
+                    unitPricePerSqm: rentPerSqM,
                     documents: []
                 };
             }
@@ -303,10 +307,10 @@ router.delete('/:companyId', requireRole(['ADMIN', 'MANAGER']), async (req: Auth
 
 // GET documents for a specific lease
 // SECURITY: Require ADMIN or MANAGER role
-router.get('/:companyId/documents', requireRole(['ADMIN', 'MANAGER']), async (req: AuthRequest, res) => {
-    const { companyId } = req.params;
+router.get('/:id/documents', requireRole(['ADMIN', 'MANAGER']), async (req: AuthRequest, res) => {
+    const { id } = req.params;
     try {
-        const result = await query('SELECT documents FROM leases WHERE company_id = $1 AND deleted_at IS NULL', [companyId]);
+        const result = await query('SELECT documents FROM leases WHERE id = $1 AND deleted_at IS NULL', [id]);
 
         if (result.rows.length === 0) {
             // No active lease exists, return empty array
@@ -323,19 +327,24 @@ router.get('/:companyId/documents', requireRole(['ADMIN', 'MANAGER']), async (re
 
 // ADD document to a lease
 // SECURITY: Require ADMIN or MANAGER role
-router.post('/:companyId/documents', requireRole(['ADMIN', 'MANAGER']),
+router.post('/:id/documents', requireRole(['ADMIN', 'MANAGER']),
     validate([
         body('name').trim().isLength({ min: 1, max: 255 }).withMessage('Document name is required'),
-        body('url').trim().isLength({ min: 1, max: 1000 }).withMessage('Document URL is required'),
+        body('url').isString().withMessage('Document URL is required'),
         body('type').optional().trim().isLength({ max: 50 })
     ]),
     async (req: AuthRequest, res: any) => {
-        const { companyId } = req.params;
+        const { id } = req.params;
         const { name, url, type } = req.body;
 
+        const validation = validateBase64File(url);
+        if (!validation.isValid) {
+            return res.status(400).json({ error: validation.error });
+        }
+
         try {
-            // Check if lease exists for this company
-            const leaseRes = await query('SELECT * FROM leases WHERE company_id = $1 AND deleted_at IS NULL', [companyId]);
+            // Check if lease exists
+            const leaseRes = await query('SELECT * FROM leases WHERE id = $1 AND deleted_at IS NULL', [id]);
 
             if (leaseRes.rows.length === 0) {
                 return res.status(404).json({ error: 'No active lease found for this company' });
@@ -360,8 +369,8 @@ router.post('/:companyId/documents', requireRole(['ADMIN', 'MANAGER']),
             const updatedDocuments = [...documents, newDocument];
 
             await query(
-                'UPDATE leases SET documents = $1 WHERE company_id = $2 AND deleted_at IS NULL',
-                [JSON.stringify(updatedDocuments), companyId]
+                'UPDATE leases SET documents = $1 WHERE id = $2 AND deleted_at IS NULL',
+                [JSON.stringify(updatedDocuments), id]
             );
 
             await audit(
@@ -384,33 +393,19 @@ router.post('/:companyId/documents', requireRole(['ADMIN', 'MANAGER']),
 
 // DELETE document from a lease
 // SECURITY: Require ADMIN or MANAGER role
-router.delete('/:companyId/documents/:docName', requireRole(['ADMIN', 'MANAGER']), async (req: AuthRequest, res) => {
-    const { companyId, docName } = req.params;
+router.delete('/:id/documents/:docName', requireRole(['ADMIN', 'MANAGER']), async (req: AuthRequest, res) => {
+    const { id, docName } = req.params;
 
     try {
-        // Check if lease exists for this company
-        const leaseRes = await query('SELECT * FROM leases WHERE company_id = $1 AND deleted_at IS NULL', [companyId]);
+        const leaseRes = await query('SELECT documents FROM leases WHERE id = $1 AND deleted_at IS NULL', [id]);
+        if (leaseRes.rows.length === 0) return res.status(404).json({ error: 'Lease not found' });
 
-        if (leaseRes.rows.length === 0) {
-            return res.status(404).json({ error: 'No active lease found for this company' });
-        }
+        let documents = leaseRes.rows[0].documents || [];
+        const initialLength = documents.length;
+        documents = documents.filter((d: any) => d.name !== docName);
+        if (documents.length === initialLength) return res.status(404).json({ error: 'Document not found' });
 
-        const lease = leaseRes.rows[0];
-        const documents = lease.documents || [];
-
-        // Check if document exists
-        const existingDoc = documents.find((doc: any) => doc.name === docName);
-        if (!existingDoc) {
-            return res.status(404).json({ error: 'Document not found' });
-        }
-
-        // Remove document
-        const updatedDocuments = documents.filter((doc: any) => doc.name !== docName);
-
-        await query(
-            'UPDATE leases SET documents = $1 WHERE company_id = $2 AND deleted_at IS NULL',
-            [JSON.stringify(updatedDocuments), companyId]
-        );
+        await query('UPDATE leases SET documents = $1 WHERE id = $2', [JSON.stringify(documents), id]);
 
         await audit(
             'LEASE',

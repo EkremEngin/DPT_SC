@@ -1,0 +1,42 @@
+{
+  "company": {
+    "id": "8009dc33-f6e5-406c-972b-2eec3b6d90e7",
+    "name": "Eqo",
+    "registration_number": "TR-209001",
+    "sector": "BelirtilmeGidadi",
+    "business_areas": [
+      "BelirtilmeGidadi"
+    ],
+    "work_area": null,
+    "manager_name": "Ekrem Engin",
+    "manager_phone": "555 555 55 55",
+    "manager_email": "q@gmail.com",
+    "employee_count": 0,
+    "score": "0.00",
+    "contract_template": {
+      "endDate": "2027-02-23T14:22:13.436Z",
+      "startDate": "2026-02-23T14:22:13.436Z",
+      "rentPerSqM": 125
+    },
+    "created_at": "2026-02-23T14:22:13.778Z",
+    "deleted_at": null
+  },
+  "units": [
+    {
+      "id": "f6d65847-ed7f-4e64-a8c8-bbabd55d213b",
+      "block_id": "f884a4de-559a-49c2-8fd9-b3809d4bc529",
+      "number": "AZA-BZA-4-1",
+      "floor": "4",
+      "area_sqm": "748.00",
+      "status": "RESERVED",
+      "is_maintenance": false,
+      "company_id": "8009dc33-f6e5-406c-972b-2eec3b6d90e7",
+      "reservation_company_id": null,
+      "reservation_fee": "150.00",
+      "reserved_at": null,
+      "created_at": "2026-02-23T15:02:04.203Z",
+      "deleted_at": null
+    }
+  ],
+  "leases": []
+}

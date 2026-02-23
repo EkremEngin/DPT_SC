@@ -33,7 +33,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({ isOpen, 
 
                 <input
                     type="text"
-                    className="w-full p-3 border-2 border-gray-200 rounded-xl text-center font-bold text-gray-800 focus:border-rose-500 focus:outline-none mb-6 uppercase"
+                    className="w-full p-3 border-2 border-gray-200 rounded-xl text-center font-bold text-black focus:border-rose-500 focus:outline-none mb-6 uppercase"
                     placeholder="ONAYLIYORUM"
                     value={confirmText}
                     onChange={(e) => setConfirmText(e.target.value)}

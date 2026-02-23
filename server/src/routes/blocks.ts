@@ -10,21 +10,16 @@ import { createLoggerWithReq } from '../utils/logger';
 
 const router = Router();
 
-// GET all blocks (optionally filter by campusId) with static caching
-router.get('/', cacheConfig.static, async (req, res) => {
+// GET all blocks (optionally filter by campusId) with no caching to ensure real-time UI updates
+router.get('/', cacheConfig.noCache, async (req, res) => {
     const { campusId } = req.query;
     try {
         let result;
         if (campusId) {
-            result = await query('SELECT * FROM blocks WHERE campus_id = $1 AND deleted_at IS NULL ORDER BY name', [campusId]);
+            result = await query('SELECT * FROM blocks WHERE campus_id = $1 AND deleted_at IS NULL ORDER BY display_order, name', [campusId]);
         } else {
-            result = await query('SELECT * FROM blocks WHERE deleted_at IS NULL ORDER BY name');
+            result = await query('SELECT * FROM blocks WHERE deleted_at IS NULL ORDER BY display_order, name');
         }
-
-        // Transform snake_case columns to camelCase for frontend compatibility if needed
-        // Ideally frontend should adapt, but for smoother migration let's map properties if strictly expected
-        // Or we can use `pg-camelcase` library. For now, let's return snake_case and update frontend to expect camelCase mapping.
-        // Actually, let's map it manually to match types.ts exactly to minimize frontend changes.
 
         const mappedRows = result.rows.map(row => ({
             id: row.id,
@@ -50,8 +45,8 @@ router.post('/', requireRole(['ADMIN', 'MANAGER']),
     validate([
         body('campusId').isUUID().withMessage('Campus ID must be a valid UUID'),
         body('name').trim().isLength({ min: 2, max: 50 }).withMessage('Block name must be 2-50 characters'),
-        body('maxFloors').optional().isInt({ min: 1 }).withMessage('Max floors must be a positive integer'),
-        body('maxOffices').optional().isInt({ min: 1 }).withMessage('Max offices must be a positive integer'),
+        body('maxFloors').optional().isInt({ min: 0 }).withMessage('Max floors must be a non-negative integer'),
+        body('maxOffices').optional().isInt({ min: 0 }).withMessage('Max offices must be a non-negative integer'),
         body('maxAreaSqM').optional().isFloat({ min: 0 }).withMessage('Max area must be a positive number'),
         body('defaultOperatingFee').optional().isFloat({ min: 0 }).withMessage('Default operating fee must be a positive number'),
         body('sqMPerEmployee').optional().isFloat({ min: 1 }).withMessage('SqM per employee must be a positive number'),
@@ -60,37 +55,48 @@ router.post('/', requireRole(['ADMIN', 'MANAGER']),
     async (req: AuthRequest, res: any) => {
         const { campusId, name, maxFloors, maxOffices, maxAreaSqM, defaultOperatingFee, sqMPerEmployee, floorCapacities } = req.body;
         try {
-            const result = await query(
-                `INSERT INTO blocks (campus_id, name, max_floors, max_offices, max_area_sqm, default_operating_fee, sqm_per_employee, floor_capacities)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING *`,
-                [campusId, name, maxFloors || 0, maxOffices || 0, maxAreaSqM || 0, defaultOperatingFee || 400, sqMPerEmployee || 5, JSON.stringify(floorCapacities || [])]
-            );
-            const newBlock = result.rows[0];
+            await transaction(async (client) => {
+                // Prevent duplicate blocks in the same campus
+                const existing = await client.query('SELECT id FROM blocks WHERE campus_id = $1 AND name = $2 AND deleted_at IS NULL', [campusId, name]);
+                if (existing.rows.length > 0) {
+                    throw new Error('DUPLICATE_BLOCK');
+                }
 
-            await audit(
-                'BLOCK',
-                'CREATE',
-                `${newBlock.name} bloğu eklendi.`,
-                undefined,
-                undefined,
-                req.user?.username,
-                req.user?.role
-            );
+                const result = await client.query(
+                    `INSERT INTO blocks (campus_id, name, max_floors, max_offices, max_area_sqm, default_operating_fee, sqm_per_employee, floor_capacities)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 RETURNING *`,
+                    [campusId, name, maxFloors || 0, maxOffices || 0, maxAreaSqM || 0, defaultOperatingFee || 400, sqMPerEmployee || 5, JSON.stringify(floorCapacities || [])]
+                );
+                const newBlock = result.rows[0];
 
-            // Map back to camelCase
-            res.status(201).json({
-                id: newBlock.id,
-                campusId: newBlock.campus_id,
-                name: newBlock.name,
-                maxFloors: newBlock.max_floors,
-                maxOffices: newBlock.max_offices,
-                maxAreaSqM: parseFloat(newBlock.max_area_sqm),
-                defaultOperatingFee: parseFloat(newBlock.default_operating_fee),
-                sqMPerEmployee: parseFloat(newBlock.sqm_per_employee),
-                floorCapacities: newBlock.floor_capacities
+                await audit(
+                    'BLOCK',
+                    'CREATE',
+                    `${newBlock.name} bloğu eklendi.`,
+                    undefined,
+                    undefined,
+                    req.user?.username,
+                    req.user?.role
+                );
+
+                // Map back to camelCase
+                res.status(201).json({
+                    id: newBlock.id,
+                    campusId: newBlock.campus_id,
+                    name: newBlock.name,
+                    maxFloors: newBlock.max_floors,
+                    maxOffices: newBlock.max_offices,
+                    maxAreaSqM: parseFloat(newBlock.max_area_sqm),
+                    defaultOperatingFee: parseFloat(newBlock.default_operating_fee),
+                    sqMPerEmployee: parseFloat(newBlock.sqm_per_employee),
+                    floorCapacities: newBlock.floor_capacities
+                });
             });
-        } catch (err) {
+        } catch (err: any) {
+            if (err.message === 'DUPLICATE_BLOCK') {
+                return res.status(400).json({ error: 'Bu kampüste aynı isimde bir blok zaten var.' });
+            }
             const log = createLoggerWithReq(req);
             log.error({ err }, 'Database error');
             res.status(500).json({ error: 'Database error' });

@@ -8,57 +8,58 @@ import { body } from 'express-validator';
 
 const router = Router();
 
-// GET all active sectors
+// GET all active business areas
 router.get('/', async (req, res) => {
     try {
-        const result = await query('SELECT name FROM sectors WHERE deleted_at IS NULL ORDER BY name');
+        const result = await query('SELECT name FROM business_areas WHERE deleted_at IS NULL ORDER BY name');
         res.json(result.rows.map(row => row.name));
     } catch (err) {
         res.status(500).json({ error: 'Database error' });
     }
 });
 
-// POST create new sector
+// POST create new business area
 // SECURITY: Require ADMIN or MANAGER role
 router.post('/', requireRole(['ADMIN', 'MANAGER']),
     validate([
-        body('sector').trim().isLength({ min: 1, max: 255 }).withMessage('Sector name must be between 1 and 255 characters')
+        body('name').trim().isLength({ min: 2, max: 255 }).withMessage('Business area name must be between 2 and 255 characters')
     ]),
     async (req: AuthRequest, res: any) => {
-        const { sector } = req.body;
+        const { name } = req.body;
+        const trimmedName = name.trim();
 
         try {
-            // Check if sector exists (including soft deleted)
-            const existing = await query('SELECT * FROM sectors WHERE name = $1', [sector]);
+            // Check if business area exists (including soft deleted)
+            const existing = await query('SELECT * FROM business_areas WHERE name = $1', [trimmedName]);
 
             if (existing.rows.length > 0) {
-                const existingSector = existing.rows[0];
-                if (existingSector.deleted_at) {
+                const existingArea = existing.rows[0];
+                if (existingArea.deleted_at) {
                     // Restore if soft deleted
-                    await query('UPDATE sectors SET deleted_at = NULL WHERE id = $1', [existingSector.id]);
+                    await query('UPDATE business_areas SET deleted_at = NULL WHERE id = $1', [existingArea.id]);
 
                     await audit(
-                        'SECTOR',
+                        'BUSINESS_AREA',
                         'RESTORE',
-                        `Sektör geri yüklendi: ${sector}`,
+                        `İş alanı etiketi geri yüklendi: ${trimmedName}`,
                         undefined,
                         undefined,
                         req.user?.username,
                         req.user?.role
                     ).catch(console.error);
 
-                    return res.status(201).json({ success: true, message: 'Sector restored' });
+                    return res.status(201).json({ success: true, message: 'Business area restored' });
                 }
-                return res.status(400).json({ error: 'Sector already exists' });
+                return res.status(400).json({ error: 'Business area already exists' });
             }
 
-            // Create new sector
-            await query('INSERT INTO sectors (name) VALUES ($1)', [sector]);
+            // Create new business area
+            await query('INSERT INTO business_areas (name) VALUES ($1)', [trimmedName]);
 
             await audit(
-                'SECTOR',
+                'BUSINESS_AREA',
                 'CREATE',
-                `Yeni sektör eklendi: ${sector}`,
+                `Yeni iş alanı eklendi: ${trimmedName}`,
                 undefined,
                 undefined,
                 req.user?.username,
@@ -73,29 +74,25 @@ router.post('/', requireRole(['ADMIN', 'MANAGER']),
     }
 );
 
-// DELETE sector (soft delete)
+// DELETE business area (soft delete)
 // SECURITY: Require ADMIN or MANAGER role
 router.delete('/:name', requireRole(['ADMIN', 'MANAGER']), async (req: AuthRequest, res: any) => {
     const { name } = req.params;
 
     try {
-        // Build query
-        // Note: The frontend sends name in URL. It might be URI encoded. Express handles decoding usually.
-        // We use name to find the record.
-
         const result = await query(
-            'UPDATE sectors SET deleted_at = CURRENT_TIMESTAMP WHERE name = $1 AND deleted_at IS NULL RETURNING *',
+            'UPDATE business_areas SET deleted_at = CURRENT_TIMESTAMP WHERE name = $1 AND deleted_at IS NULL RETURNING *',
             [name]
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Sector not found' });
+            return res.status(404).json({ error: 'Business area not found' });
         }
 
         await audit(
-            'SECTOR',
+            'BUSINESS_AREA',
             'DELETE',
-            `Sektör silindi: ${name}`,
+            `İş alanı silindi: ${name}`,
             undefined,
             undefined,
             req.user?.username,

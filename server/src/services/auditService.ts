@@ -2,7 +2,7 @@ import { query } from '../db';
 import { logger } from '../utils/logger';
 
 export const audit = async (
-    entityType: 'LEASE' | 'UNIT' | 'BLOCK' | 'CAMPUS' | 'COMPANY' | 'AUTH' | 'SECTOR',
+    entityType: 'LEASE' | 'UNIT' | 'BLOCK' | 'CAMPUS' | 'COMPANY' | 'AUTH' | 'SECTOR' | 'BUSINESS_AREA',
     action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'PASSWORD_CHANGE' | 'RESTORE',
     details: string,
     rollbackData?: any,

@@ -224,7 +224,7 @@ export const FloorRow: React.FC<FloorRowProps> = memo(({
                                 value={confirmInput}
                                 onChange={(e) => setConfirmInput(e.target.value)}
                                 placeholder="ONAYLIYORUM yazın..."
-                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-center font-black tracking-widest focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all"
+                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-center font-black tracking-widest text-black focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all"
                                 autoFocus
                             />
                         </div>

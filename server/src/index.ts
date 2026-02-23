@@ -43,7 +43,8 @@ if (missingEnvVars.length > 0) {
 
 // Security Middleware
 app.use(helmet());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Request ID Middleware - Must be before CORS for proper tracing
 app.use(requestIdMiddleware);
@@ -55,6 +56,7 @@ app.use(metricsMiddleware);
 const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5173',
+    'http://localhost:4173',
     process.env.FRONTEND_URL // Render frontend URL
 ].filter(Boolean) as string[];
 
@@ -84,7 +86,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Global Rate Limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+    max: 1000, // Limit each IP to 1000 requests per windowMs
     standardHeaders: true,
     legacyHeaders: false,
     skip: () => {
@@ -138,6 +140,10 @@ app.use('/api', authenticateToken);
 app.get('/metrics', metricsEndpoint);
 app.post('/metrics/reset', authenticateToken, requireRole(['ADMIN']), resetMetricsEndpoint);
 
+import businessAreaRoutes from './routes/businessAreas';
+
+// ... (other imports)
+
 // Protected API Routes
 app.use('/api/users', userRoutes);
 app.use('/api/campuses', campusRoutes);
@@ -148,6 +154,7 @@ app.use('/api/leases', leaseRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sectors', sectorRoutes);
+app.use('/api/business-areas', businessAreaRoutes);
 app.use('/api/restore', restoreRoutes);
 app.use('/api/rollback', rollbackRoutes);
 

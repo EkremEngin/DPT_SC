@@ -250,7 +250,7 @@ const FloorRow: React.FC<FloorRowProps> = ({ block, floorCap, currentUnits, allC
                                 value={confirmInput}
                                 onChange={(e) => setConfirmInput(e.target.value)}
                                 placeholder="ONAYLIYORUM yazın..."
-                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-center font-black tracking-widest focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all"
+                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-center font-black tracking-widest text-black focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-none transition-all"
                                 autoFocus
                             />
                         </div>
@@ -307,11 +307,9 @@ export const PhysicalStructure: React.FC = () => {
     const [allCompanies, setAllCompanies] = useState<Company[]>([]);
     const [allLeases, setAllLeases] = useState<any[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
-    const [sectors, setSectors] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     const [filterFloor, setFilterFloor] = useState<string>('ALL');
-    const [filterSector, setFilterSector] = useState<string>('ALL');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [filterMinArea, setFilterMinArea] = useState<string>('');
     const [filterMaxArea, setFilterMaxArea] = useState<string>('');
@@ -351,6 +349,7 @@ export const PhysicalStructure: React.FC = () => {
     });
     const [assignSearch, setAssignSearch] = useState('');
     const [assignError, setAssignError] = useState<string | null>(null);
+    const [assignModalUnits, setAssignModalUnits] = useState<Unit[]>([]);
 
     const [newBlockData, setNewBlockData] = useState({
         name: '',
@@ -436,16 +435,14 @@ export const PhysicalStructure: React.FC = () => {
     const fetchData = async () => {
         setIsLoading(true);
         try {
-            const [campusesData, companiesData, leasesData, sectorsData] = await Promise.all([
+            const [campusesData, companiesData, leasesData] = await Promise.all([
                 api.getCampuses(),
-                api.getCompanies(),
-                api.getAllLeaseDetails(),
-                api.getSectors()
+                api.getCompanies(5000),
+                api.getAllLeaseDetails()
             ]);
             setCampuses(campusesData || []);
             setAllCompanies(companiesData.data || []);
             setAllLeases(leasesData || []);
-            setSectors(sectorsData || []);
 
             // Set initial selected campus
             if (campusesData && campusesData.length > 0 && !selectedCampus) {
@@ -500,6 +497,17 @@ export const PhysicalStructure: React.FC = () => {
         }
     }, [selectedBlockId]);
 
+    // Fetch units for the assign modal when selected block changes
+    useEffect(() => {
+        if (assignData.blockId) {
+            api.getUnits(assignData.blockId)
+                .then(data => setAssignModalUnits(data || []))
+                .catch(() => setAssignModalUnits([]));
+        } else {
+            setAssignModalUnits([]);
+        }
+    }, [assignData.blockId]);
+
     // Filter Options
     const campusOptions = useMemo(() => [
         ...campuses.map(c => ({ value: c.id, label: c.name }))
@@ -517,10 +525,7 @@ export const PhysicalStructure: React.FC = () => {
         return [{ value: 'ALL', label: 'Tüm Katlar' }, ...floors.map(f => ({ value: f, label: `${f}. Kat` }))];
     }, [currentBlock]);
 
-    const sectorOptions = useMemo(() => {
-        const sortedSectors = [...sectors].sort();
-        return [{ value: 'ALL', label: 'Tüm Sektörler' }, ...sortedSectors.map(s => ({ value: s, label: s }))];
-    }, []);
+
 
     const statusOptions = [
         { value: 'ALL', label: 'Tüm Durumlar' },
@@ -568,24 +573,34 @@ export const PhysicalStructure: React.FC = () => {
 
     const searchableCompanies = useMemo(() => {
         // Get fresh list of active allocations to filter out
-        // We exclude companies that already have a physical unit assigned
+        // We only want companies that have an active lease OR pending contract BUT NO physical unit
         const activeLeases = allLeases;
-        const assignedCompanyIds = new Set(
+
+        console.log("allLeases type:", typeof activeLeases, "isArray:", Array.isArray(activeLeases));
+        if (!Array.isArray(activeLeases)) {
+            console.error("activeLeases is NOT an array!", activeLeases);
+            return []; // Prevent crash
+        }
+
+        // Find companies with "Tahsis Edilmedi" status (Lease exists, but no unit assigned)
+        const unallocatedCompanyIds = new Set(
             activeLeases
-                // Filter out companies that have a valid unit assigned
                 // If unit.id is missing or '-', they are considered Detached/Unallocated
-                .filter(l => l.unit?.id && l.unit.id !== '-' && l.unit.id !== '')
+                .filter(l => !l.unit?.id || l.unit.id === '-' || l.unit.id === '')
                 .map(l => l.company.id)
         );
 
-        const available = allCompanies.filter(c => !assignedCompanyIds.has(c.id));
+        const available = allCompanies.filter(c => unallocatedCompanyIds.has(c.id));
+        console.log("available count:", available.length, "allCompanies count:", allCompanies.length);
+        const ttech = allCompanies.find(c => c.name.includes("T-Tech"));
+        console.log("T-Tech in allCompanies?", !!ttech, "is in unallocatedCompanyIds?", ttech ? unallocatedCompanyIds.has(ttech.id) : "N/A");
 
         if (!assignSearch) return available.slice(0, 50);
         return available.filter(c =>
             c.name.toLowerCase().includes(assignSearch.toLowerCase()) ||
             c.sector.toLowerCase().includes(assignSearch.toLowerCase())
         ).slice(0, 50);
-    }, [allCompanies, assignSearch, isAssignModalOpen]);
+    }, [allCompanies, assignSearch, isAssignModalOpen, allLeases]);
 
     const assignModalBlocks = useMemo(() => {
         return assignData.campusId ? blocks.filter(b => b.campusId === assignData.campusId) : [];
@@ -604,12 +619,15 @@ export const PhysicalStructure: React.FC = () => {
         const floorCap = block.floorCapacities.find(f => f.floor === assignData.floor);
         if (!floorCap) return null;
 
-        const blockUnits = units.filter(u => u.blockId === assignData.blockId && u.floor === assignData.floor);
-        const used = units.reduce((sum, u) => (u.status === 'OCCUPIED' || u.status === 'RESERVED' ? sum + u.areaSqM : sum), 0);
-        const remaining = Math.max(0, floorCap.totalSqM - used);
+        const blockUnits = assignModalUnits.filter(u => u.blockId === assignData.blockId && u.floor === assignData.floor);
+        const rawUsed = blockUnits.reduce((sum, u) => (u.status === 'OCCUPIED' || u.status === 'RESERVED' ? sum + parseFloat(u.areaSqM.toString()) : sum), 0);
 
-        return { total: floorCap.totalSqM, used, remaining };
-    }, [assignData.blockId, assignData.floor, assignModalBlocks]);
+        const used = Math.round(rawUsed * 100) / 100;
+        const total = Math.round(parseFloat(floorCap.totalSqM.toString()) * 100) / 100;
+        const remaining = Math.max(0, Math.round((total - used) * 100) / 100);
+
+        return { total, used, remaining };
+    }, [assignData.blockId, assignData.floor, assignModalBlocks, assignModalUnits]);
 
     const estimatedRent = useMemo(() => {
         if (!assignData.companyId || !assignData.area) return 0;
@@ -669,14 +687,19 @@ export const PhysicalStructure: React.FC = () => {
     const handleCreateCampus = async () => {
         if (!newCampusData.name) return;
         try {
-            await api.addCampus({ name: sanitizeInput(newCampusData.name), address: 'Belirtilmedi', maxOfficeCap: 100, maxAreaCap: 10000, maxFloorsCap: 10 });
+            const newCampus = await api.addCampus({ name: sanitizeInput(newCampusData.name), address: 'Belirtilmedi', maxOfficeCap: 100, maxAreaCap: 10000, maxFloorsCap: 10 });
             // Trigger event for Dashboard to refresh
             triggerDataChange('campus', 'create');
+
+            // Refetch to sync global state 
             await fetchData();
+
             setIsAddCampusModalOpen(false);
             setNewCampusData({ name: '' });
-            if (campuses.length > 0) {
-                await handleSelectCampus(campuses[campuses.length - 1]);
+
+            if (newCampus && newCampus.id) {
+                // Ensure the exact new campus is selected instead of relying on a potentially stale array
+                await handleSelectCampus(newCampus);
             }
         } catch (err: any) {
             alert('Kampüs oluşturulurken hata: ' + (err.message || ''));
@@ -716,7 +739,7 @@ export const PhysicalStructure: React.FC = () => {
             totalSqM: area
         }));
         try {
-            await api.addBlock({
+            const newBlock = await api.addBlock({
                 campusId: selectedCampus.id,
                 name: sanitizeInput(newBlockData.name),
                 maxFloors: newBlockData.maxFloors,
@@ -724,11 +747,20 @@ export const PhysicalStructure: React.FC = () => {
                 maxAreaSqM: newBlockData.totalArea,
                 defaultOperatingFee: newBlockData.defaultOperatingFee
             }, floorCaps);
+
             // Trigger event for Dashboard to refresh
             triggerDataChange('block', 'create');
+
+            // Sync blocks array with backend
             await fetchBlocks(selectedCampus.id);
+
             setIsAddBlockModalOpen(false);
             setNewBlockData({ name: '', maxFloors: 5, totalArea: 5000, floorAreas: [1000, 1000, 1000, 1000, 1000], defaultOperatingFee: 400 });
+
+            if (newBlock && newBlock.id) {
+                // Explicitly select the new block, eliminating reliance on stale closures
+                setSelectedBlockId(newBlock.id);
+            }
         } catch (err: any) {
             alert('Blok oluşturulurken hata: ' + (err.message || ''));
         }
@@ -765,7 +797,10 @@ export const PhysicalStructure: React.FC = () => {
             const leasesData = await api.getAllLeaseDetails();
             setAllLeases(leasesData || []);
 
-            if (selectedCampus) await fetchBlocks(selectedCampus.id);
+            if (selectedCampus) {
+                await fetchBlocks(selectedCampus.id);
+                if (selectedBlockId) await fetchUnits(selectedBlockId);
+            }
         } catch (err: any) { setAssignError(err.message); }
     };
 
@@ -939,7 +974,7 @@ export const PhysicalStructure: React.FC = () => {
                 <div ref={searchContainerRef} className="relative w-full">
                     <div className={`flex items-center gap-3 px-4 py-3 bg-white rounded-2xl border-2 transition-all shadow-lg ${isSearchFocused ? 'border-indigo-500 ring-4 ring-indigo-500/10' : 'border-gray-200'}`}>
                         <Search className={`w-5 h-5 ${isSearchFocused ? 'text-indigo-600' : 'text-gray-400'}`} />
-                        <input type="text" className="w-full bg-transparent border-none outline-none text-sm font-bold text-gray-900 placeholder:text-gray-400" placeholder="Firma, yönetici veya sektör ara..." value={globalSearch} onChange={e => { setGlobalSearch(sanitizeInput(e.target.value)); setIsSearchFocused(true); }} onFocus={() => setIsSearchFocused(true)} />
+                        <input type="text" className="w-full bg-transparent border-none outline-none text-sm font-bold text-gray-900 placeholder:text-gray-400" placeholder="Firma, yönetici veya sektör ara..." value={globalSearch} onChange={e => { setGlobalSearch(e.target.value); setIsSearchFocused(true); }} onFocus={() => setIsSearchFocused(true)} />
                         {globalSearch && <button onClick={() => setGlobalSearch('')} className="p-1 hover:bg-gray-100 rounded-full"><X className="w-4 h-4 text-gray-400" /></button>}
                     </div>
                     <AnimatePresence>
@@ -971,7 +1006,7 @@ export const PhysicalStructure: React.FC = () => {
                 </div>
 
                 {/* 6-Column Filter Bar */}
-                <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 p-4 shadow-sm grid grid-cols-2 md:grid-cols-6 gap-4 items-end">
+                <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 p-4 shadow-sm grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
                     <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Kampüs Seçimi</label>
                         <Dropdown
@@ -1007,17 +1042,7 @@ export const PhysicalStructure: React.FC = () => {
                             placeholder="Tüm Katlar"
                         />
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Sektör Filtresi</label>
-                        <Dropdown
-                            options={sectorOptions}
-                            value={filterSector}
-                            onChange={setFilterSector}
-                            icon={<Briefcase size={14} />}
-                            className="text-xs"
-                            placeholder="Tüm Sektörler"
-                        />
-                    </div>
+
                     <div className="flex flex-col gap-1.5 col-span-2 md:col-span-1">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Durum Filtresi</label>
                         <Dropdown
@@ -1116,13 +1141,6 @@ export const PhysicalStructure: React.FC = () => {
                                             .filter(fc => {
                                                 if (filterFloor !== 'ALL' && fc.floor !== filterFloor) return false;
                                                 const floorUnits = units.filter(u => u.blockId === block.id && u.floor === fc.floor);
-                                                if (filterSector !== 'ALL') {
-                                                    const hasSector = floorUnits.some(u => {
-                                                        const comp = allCompanies.find(c => c.id === u.companyId);
-                                                        return comp?.sector === filterSector;
-                                                    });
-                                                    if (!hasSector) return false;
-                                                }
                                                 const used = floorUnits.reduce((sum, u) => (u.status === 'OCCUPIED' || u.status === 'RESERVED' ? sum + u.areaSqM : sum), 0);
                                                 const total = fc.totalSqM;
                                                 const occupancy = total > 0 ? (used / total) * 100 : 0;
@@ -1579,7 +1597,7 @@ export const PhysicalStructure: React.FC = () => {
                 deleteCampusConfirm && createPortal(
                     <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
                         <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border-2 border-rose-100">
-                            <div className="p-8 text-center"><div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-rose-100 shadow-inner"><ShieldAlert className="w-10 h-10" /></div><h3 className="text-2xl font-black text-gray-900 mb-4">KRİTİK İŞLEM!</h3><p className="text-sm text-gray-600 font-medium leading-relaxed mb-6"><span className="font-black text-rose-600">{deleteCampusConfirm.name}</span> kampüsünü silmek üzeresiniz.</p><div className="space-y-4"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Onaylamak için <span className="text-rose-500">ONAYLIYORUM</span> yazın</p><input type="text" autoFocus placeholder="ONAYLIYORUM" className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-center text-lg font-black text-rose-600 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 outline-none" value={campusDeleteInput} onChange={e => setCampusDeleteInput(e.target.value)} /></div></div>
+                            <div className="p-8 text-center"><div className="w-20 h-20 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-rose-100 shadow-inner"><ShieldAlert className="w-10 h-10" /></div><h3 className="text-2xl font-black text-gray-900 mb-4">KRİTİK İŞLEM!</h3><p className="text-sm text-gray-600 font-medium leading-relaxed mb-6"><span className="font-black text-rose-600">{deleteCampusConfirm.name}</span> kampüsünü silmek üzeresiniz.</p><div className="space-y-4"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Onaylamak için <span className="text-rose-500">ONAYLIYORUM</span> yazın</p><input type="text" autoFocus placeholder="ONAYLIYORUM" className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl text-center text-lg font-black text-black focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 outline-none" value={campusDeleteInput} onChange={e => setCampusDeleteInput(e.target.value)} /></div></div>
                             <div className="p-6 bg-slate-50 flex gap-4 border-t border-slate-100"><Button variant="ghost" className="flex-1 font-bold text-slate-500" onClick={() => { setDeleteCampusConfirm(null); setCampusDeleteInput(''); }}>Vazgeç</Button><Button variant="danger" className="flex-1 font-black shadow-xl" disabled={campusDeleteInput !== 'ONAYLIYORUM'} onClick={handleDeleteCampus}>KAMPÜSÜ SİL</Button></div>
                         </motion.div>
                     </div>, document.body
@@ -1609,7 +1627,7 @@ export const PhysicalStructure: React.FC = () => {
                                             className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 font-bold outline-none transition-all bg-white shadow-sm text-black"
                                             placeholder="Örn: A Blok"
                                             value={newBlockData.name}
-                                            onChange={e => setNewBlockData({ ...newBlockData, name: sanitizeInput(e.target.value) })}
+                                            onChange={e => setNewBlockData({ ...newBlockData, name: e.target.value })}
                                         />
                                     </div>
                                     <div>
@@ -1760,7 +1778,7 @@ export const PhysicalStructure: React.FC = () => {
             {/* Add Campus Modal */}
             {
                 isAddCampusModalOpen && createPortal(
-                    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col"><div className="p-6 bg-indigo-600 text-white flex justify-between items-center"><h3 className="text-lg font-bold">Yeni Kampüs Tanımla</h3><button onClick={() => setIsAddCampusModalOpen(false)}><X className="w-5 h-5" /></button></div><div className="p-6 space-y-4"><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Kampüs Adı</label><input type="text" autoFocus className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 font-bold text-black" value={newCampusData.name} onChange={e => setNewCampusData({ name: sanitizeInput(e.target.value) })} /></div><div className="p-4 border-t bg-gray-50 flex justify-end gap-3"><Button variant="ghost" onClick={() => setIsAddCampusModalOpen(false)}>İptal</Button><Button onClick={handleCreateCampus} disabled={!newCampusData.name}>Kaydet</Button></div></div></div>, document.body
+                    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"><div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col"><div className="p-6 bg-indigo-600 text-white flex justify-between items-center"><h3 className="text-lg font-bold">Yeni Kampüs Tanımla</h3><button onClick={() => setIsAddCampusModalOpen(false)}><X className="w-5 h-5" /></button></div><div className="p-6 space-y-4"><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Kampüs Adı</label><input type="text" autoFocus className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-indigo-500 font-bold text-black" value={newCampusData.name} onChange={e => setNewCampusData({ name: e.target.value })} /></div><div className="p-4 border-t bg-gray-50 flex justify-end gap-3"><Button variant="ghost" onClick={() => setIsAddCampusModalOpen(false)}>İptal</Button><Button onClick={handleCreateCampus} disabled={!newCampusData.name}>Kaydet</Button></div></div></div>, document.body
                 )
             }
 
@@ -1771,7 +1789,7 @@ export const PhysicalStructure: React.FC = () => {
                         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl h-[90vh] sm:h-[650px] flex flex-col md:flex-row overflow-hidden">
                             <div className="w-full md:w-2/5 h-1/3 md:h-auto bg-slate-50 border-r-0 border-b md:border-r md:border-b-0 border-slate-200 p-6 flex flex-col">
                                 <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2"><Building2 className="w-4 h-4" /> Firma Seçimi</h3>
-                                <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="text" className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Firma ara..." value={assignSearch} onChange={e => setAssignSearch(sanitizeInput(e.target.value))} /></div>
+                                <div className="relative mb-4"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="text" className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Firma ara..." value={assignSearch} onChange={e => setAssignSearch(e.target.value)} /></div>
                                 <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">{searchableCompanies.map(comp => (<button key={comp.id} onClick={() => { setAssignData({ ...assignData, companyId: comp.id }); setAssignError(null); }} className={`w-full text-left p-3 rounded-xl border transition-all flex items-center justify-between group ${assignData.companyId === comp.id ? 'bg-indigo-600 border-indigo-700 text-white shadow-lg' : 'bg-white border-slate-100 hover:border-indigo-300'}`}><div className="min-w-0 flex-1"><div className={`text-xs font-bold truncate ${assignData.companyId === comp.id ? 'text-white' : 'text-slate-900'}`}>{comp.name}</div><div className={`text-[10px] font-bold uppercase mt-0.5 ${assignData.companyId === comp.id ? 'text-indigo-100' : 'text-slate-400'}`}>{comp.sector}</div></div><ChevronRight className={`w-4 h-4 transition-transform ${assignData.companyId === comp.id ? 'translate-x-1' : 'opacity-0 group-hover:opacity-100'}`} /></button>))}</div>
                             </div>
                             <div className="flex-1 p-6 md:p-8 flex flex-col relative bg-white overflow-y-auto">
@@ -1841,7 +1859,7 @@ export const PhysicalStructure: React.FC = () => {
                                                 options={(() => {
                                                     const block = assignModalBlocks.find(b => b.id === assignData.blockId);
                                                     if (!block || !block.floorCapacities) return [];
-                                                    const blockUnits = units.filter(u => u.blockId === assignData.blockId);
+                                                    const blockUnits = assignModalUnits.filter(u => u.blockId === assignData.blockId);
 
                                                     return (block.floorCapacities || []).map(fc => {
                                                         const floorUnits = blockUnits.filter(u => u.floor === fc.floor);

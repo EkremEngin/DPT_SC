@@ -29,7 +29,11 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
             throw new Error('Oturum süresi doldu. Lütfen tekrar giriş yapın.');
         }
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(error.error || `Request failed: ${response.statusText}`);
+        let errMsg = error.error || `Request failed: ${response.statusText}`;
+        if (error.details && Array.isArray(error.details)) {
+            errMsg += ': ' + error.details.map((d: any) => `${d.field} - ${d.message}`).join(', ');
+        }
+        throw new Error(errMsg);
     }
 
     // Handle 204 No Content
@@ -62,7 +66,7 @@ export const api = {
     updateUnitAndCompany: (unitId: string, updates: any) => request<void>(`/units/${unitId}`, { method: 'PUT', body: JSON.stringify(updates) }),
 
     // Companies
-    getCompanies: () => request<any>('/companies'), // Returns { data, pagination }
+    getCompanies: (limit?: number) => request<any>(`/companies${limit ? `?limit=${limit}` : ''}`), // Returns { data, pagination }
     getCompany: (id: string) => request<Company>(`/companies/${id}`),
     registerCompany: (data: any) => request<Company>('/companies', { method: 'POST', body: JSON.stringify(data) }),
     updateCompany: (id: string, updates: any) => request<void>(`/companies/${id}`, { method: 'PUT', body: JSON.stringify(updates) }),
@@ -114,6 +118,11 @@ export const api = {
     getSectors: () => request<string[]>('/sectors'),
     addSector: (sector: string) => request<void>('/sectors', { method: 'POST', body: JSON.stringify({ sector }) }),
     deleteSector: (sector: string, cascade: boolean) => request<void>(`/sectors/${sector}?cascade=${cascade}`, { method: 'DELETE' }),
+
+    // Business Areas
+    getBusinessAreas: () => request<string[]>('/business-areas'),
+    addBusinessArea: (name: string) => request<void>('/business-areas', { method: 'POST', body: JSON.stringify({ name }) }),
+    deleteBusinessArea: (name: string) => request<void>(`/business-areas/${name}`, { method: 'DELETE' }),
 
     // Auth
     login: (credentials: any) => request<any>('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
