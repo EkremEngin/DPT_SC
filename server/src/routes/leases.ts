@@ -57,18 +57,43 @@ router.get('/', async (req, res) => {
 
 // Endpoint for ExtendedLeaseData (used by LeasingManagement page)
 router.get('/details', async (req, res) => {
-    try {
-        // This effectively replaces LeaseGuardDB.getAllLeaseDetails()
-        // We need to fetch all companies and their associated lease/unit info.
+    // A1: Request-level timings setup
+    const { v4: uuidv4 } = require('uuid');
+    const reqId = uuidv4().slice(0, 8);
+    const start_ts = process.hrtime.bigint();
+    let db_start, db_end, app_start, app_end;
 
-        // complex join with soft delete filters
+    try {
+        db_start = process.hrtime.bigint();
+        // complex join with soft delete filters + SQL Aggregation to fix NxM App-Layer Memory leak
         const text = `
             SELECT
                 c.id as company_id, c.*,
                 l.id as lease_id, l.start_date, l.end_date, l.monthly_rent, l.operating_fee, l.contract_url, l.documents as lease_documents, l.unit_price_per_sqm,
                 u.id as unit_id, u.number, u.floor, u.area_sqm, u.status,
                 b.id as block_id, b.name as block_name, b.campus_id,
-                cp.id as campus_id, cp.name as campus_name
+                cp.id as campus_id, cp.name as campus_name,
+                COALESCE(
+                    (SELECT json_agg(json_build_object(
+                        'id', cse.id,
+                        'type', cse.type,
+                        'description', cse.description,
+                        'points', cse.points,
+                        'date', cse.date,
+                        'note', cse.note,
+                        'documents', cse.documents
+                    )) FROM company_score_entries cse WHERE cse.company_id = c.id AND cse.deleted_at IS NULL),
+                    '[]'
+                ) as score_entries,
+                COALESCE(
+                    (SELECT json_agg(json_build_object(
+                        'id', cd.id,
+                        'name', cd.name,
+                        'url', cd.url,
+                        'type', cd.type
+                    )) FROM company_documents cd WHERE cd.company_id = c.id AND cd.deleted_at IS NULL),
+                    '[]'
+                ) as company_documents
             FROM companies c
             LEFT JOIN leases l ON l.company_id = c.id AND l.deleted_at IS NULL
             LEFT JOIN units u ON u.company_id = c.id AND u.deleted_at IS NULL
@@ -78,13 +103,13 @@ router.get('/details', async (req, res) => {
         `;
 
         const result = await query(text);
+        db_end = process.hrtime.bigint();
 
-        // Fetch all score entries and documents in separate queries (more efficient than N+1)
-        const scoresResult = await query('SELECT * FROM company_score_entries WHERE deleted_at IS NULL');
-        const docsResult = await query('SELECT * FROM company_documents WHERE deleted_at IS NULL');
+        app_start = process.hrtime.bigint();
 
         const extendedData = result.rows.map(row => {
             // Reconstruct the nested object structure expected by frontend ExtendedLeaseData
+            // But now using the pre-aggregated SQL data to prevent OOM
 
             // Map Company
             const company = {
@@ -100,21 +125,11 @@ router.get('/details', async (req, res) => {
                 employeeCount: row.employee_count,
                 score: parseFloat(row.score || 0),
                 contractTemplate: row.contract_template,
-                scoreEntries: scoresResult.rows.filter(s => s.company_id === row.company_id).map(s => ({
-                    id: s.id,
-                    type: s.type,
-                    description: s.description,
-                    points: parseFloat(s.points),
-                    date: s.date,
-                    note: s.note,
-                    documents: s.documents
+                scoreEntries: (row.score_entries || []).map((s: any) => ({
+                    ...s,
+                    points: parseFloat(s.points)
                 })),
-                documents: docsResult.rows.filter(d => d.company_id === row.company_id).map(d => ({
-                    id: d.id,
-                    name: d.name,
-                    url: d.url,
-                    type: d.type
-                }))
+                documents: row.company_documents || []
             };
 
             // Map Lease
@@ -130,15 +145,9 @@ router.get('/details', async (req, res) => {
                     unitPricePerSqm: row.unit_price_per_sqm ? parseFloat(row.unit_price_per_sqm) : undefined,
                     operatingFee: parseFloat(row.operating_fee),
                     documents: row.lease_documents,
-                    // ...
                 };
             }
-            // Logic for "Pending" or "Allocated No Lease" (Scenario A/B/C from db.ts)
-            // Ideally backend should just return the raw data and frontend handles display logic?
-            // But db.ts explicitly returned ExtendedLeaseData with constructed "fake" lease objects for pending states.
-            // Let's stick to returning what we have and letting frontend adapt or reconstructing it here?
 
-            // Reconstructing here to minimize frontend breakage:
             if (!lease && company.contractTemplate) {
                 const area = row.area_sqm ? parseFloat(row.area_sqm) : 0;
                 const rentPerSqM = parseFloat(company.contractTemplate.rentPerSqM || 0);
@@ -155,7 +164,7 @@ router.get('/details', async (req, res) => {
                 };
             }
 
-            if (!lease) return null; // Filter out nulls like db.ts did?
+            if (!lease) return null;
 
             return {
                 id: company.id,
@@ -173,7 +182,31 @@ router.get('/details', async (req, res) => {
             };
         }).filter(item => item !== null);
 
+        app_end = process.hrtime.bigint();
+
+        const serialize_start = process.hrtime.bigint();
+        // A1: Stringify merely for measuring serialization impact/bandwidth, without modifying the code path response object.
+        const responseJsonStr = JSON.stringify(extendedData);
+        const serialize_end = process.hrtime.bigint();
+
+        // Return original res.json(extendedData) response per constraints!
         res.json(extendedData);
+
+        const end_ts = process.hrtime.bigint();
+
+        // Output Evidence Pack metrics
+        console.log(JSON.stringify({
+            "t": "req",
+            "id": reqId,
+            "route": "/api/leases/details",
+            "db_ms": Number(db_end - db_start) / 1000000,
+            "app_ms": Number(app_end - app_start) / 1000000,
+            "json_ms": Number(serialize_end - serialize_start) / 1000000,
+            "bytes": Buffer.byteLength(responseJsonStr, 'utf8'),
+            "status": 200,
+            "total_ms": Number(end_ts - start_ts) / 1000000
+        }));
+
     } catch (err) {
         const log = createLoggerWithReq(req);
         log.error({ err }, 'Database error');

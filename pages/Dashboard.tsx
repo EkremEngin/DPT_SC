@@ -4,8 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Sector, Label
 } from 'recharts';
+
 import {
-  Building2, Maximize2, Percent, TrendingUp, MapPin, ChevronDown, Calendar as CalendarIcon, X, Info, Loader2, AlertCircle
+  Building2, Maximize2, Percent, TrendingUp, MapPin, ChevronDown, ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Info, Loader2, AlertCircle
 } from 'lucide-react';
 
 import { api } from '../services/api';
@@ -36,7 +37,6 @@ const SplitCountUp = ({ value, className, duration = 1 }: { value: number, class
     </span>
   );
 };
-
 // --- Modern Premium Active Shape ---
 const renderActiveShape = (props: any) => {
   const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, percent, value } = props;
@@ -133,6 +133,7 @@ const CustomCenterLabel = ({ viewBox, hasActiveIndex, totalCompanies, totalSecto
   );
 };
 
+
 import { ContractCalendar } from '../components/ContractCalendar';
 
 import { formatCurrency } from '../utils/format';
@@ -142,14 +143,16 @@ export const Dashboard: React.FC = () => {
   const isLight = backgroundMode === 'LIGHT';
 
   const [selectedCampusId, setSelectedCampusId] = useState<string>('ALL');
-  const [expandedCampusId, setExpandedCampusId] = useState<string | null>(null);
+  const [expandedCampusIds, setExpandedCampusIds] = useState<string[]>([]);
+  const [isAllCampusesExpanded, setIsAllCampusesExpanded] = useState(false);
+  const [currentCampusPage, setCurrentCampusPage] = useState(0);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [activeTagIndex, setActiveTagIndex] = useState<number | null>(null);
   const [expandedChart, setExpandedChart] = useState<'SECTOR' | 'TAG' | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [helpSlide, setHelpSlide] = useState(0);
-  
+
   // Loading and error states
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -211,7 +214,7 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     // Initial fetch
     fetchData();
-    
+
     // Set up polling every 30 seconds
     pollingIntervalRef.current = setInterval(() => {
       fetchData();
@@ -292,7 +295,7 @@ export const Dashboard: React.FC = () => {
         setIsLoading(false);
       }
     };
-    
+
     fetchAllData();
   }, [dataVersion, selectedCampusId]);
 
@@ -374,7 +377,50 @@ export const Dashboard: React.FC = () => {
     return { bar: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50', label: 'Müsait' };
   };
 
-  const toggleExpand = (id: string) => setExpandedCampusId(prev => prev === id ? null : id);
+  const toggleExpand = (id: string) => {
+    if (isAllCampusesExpanded) {
+      const visibleIds = paginatedCampuses.map(c => c.id);
+      setIsAllCampusesExpanded(false);
+      setExpandedCampusIds(visibleIds.filter(cId => cId !== id));
+    } else {
+      setExpandedCampusIds(prev =>
+        prev.includes(id) ? prev.filter(cId => cId !== id) : [...prev, id]
+      );
+    }
+  };
+
+  const itemsPerPage = 3;
+  const totalCampusPages = Math.ceil(metrics.campusData.length / itemsPerPage);
+  const safeCampusPage = Math.max(0, Math.min(currentCampusPage, totalCampusPages - 1));
+  const paginatedCampuses = metrics.campusData.slice(safeCampusPage * itemsPerPage, (safeCampusPage + 1) * itemsPerPage);
+
+  const areAllVisibleExpanded = isAllCampusesExpanded || (paginatedCampuses.length > 0 && paginatedCampuses.every(c => expandedCampusIds.includes(c.id)));
+
+  const getPaginationItems = () => {
+    const pages: (number | string)[] = [];
+    if (totalCampusPages <= 5) {
+      for (let i = 0; i < totalCampusPages; i++) pages.push(i);
+    } else {
+      if (safeCampusPage <= 2) {
+        pages.push(0, 1, 2, 3, '...', totalCampusPages - 1);
+      } else if (safeCampusPage >= totalCampusPages - 3) {
+        pages.push(0, '...', totalCampusPages - 4, totalCampusPages - 3, totalCampusPages - 2, totalCampusPages - 1);
+      } else {
+        pages.push(0, '...', safeCampusPage - 1, safeCampusPage, safeCampusPage + 1, '...', totalCampusPages - 1);
+      }
+    }
+    return pages;
+  };
+
+  const toggleAllVisibleCampuses = () => {
+    if (areAllVisibleExpanded) {
+      setIsAllCampusesExpanded(false);
+      setExpandedCampusIds([]);
+    } else {
+      setIsAllCampusesExpanded(true);
+      setExpandedCampusIds([]);
+    }
+  };
 
   const stats = [
     { title: 'Toplam Alan', renderValue: <><SplitCountUp value={metrics.totalArea} duration={1} /> m²</>, icon: Maximize2, color: 'text-blue-600', bg: 'bg-blue-100' },
@@ -384,7 +430,7 @@ export const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-5rem)] gap-3 w-full animate-in fade-in duration-500 overflow-hidden box-border">
+    <div className="flex flex-col h-[calc(115vh-5rem)] gap-3 w-full animate-in fade-in duration-500 overflow-y-auto overflow-x-hidden box-border pb-4 pr-1">
 
       {/* Header & Filter - Compact */}
       <div className="flex items-center justify-between shrink-0 px-1 pt-1">
@@ -432,466 +478,508 @@ export const Dashboard: React.FC = () => {
 
       {/* Main Content */}
       {!isLoading && !error && (
-      <>
-      {/* Campus Details Grid (Row 1 - Compact) */}
-      <div ref={campusGridRef} className="grid grid-cols-3 gap-3 shrink-0 h-auto">
-        {metrics.campusData.map(campus => {
-          const colorTheme = getOccupancyColor(campus.occupancyRate);
-          const isExpanded = expandedCampusId === campus.id;
-          const avgRevenue = campus.usedArea > 0 ? campus.revenue / campus.usedArea : 0;
-
-          return (
-            <div
-              key={campus.id}
-              onClick={() => toggleExpand(campus.id)}
-              className={`
-                bg-white rounded-xl border p-3 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between
-                ${isExpanded ? 'border-indigo-400 ring-1 ring-indigo-400' : 'border-gray-200'}
-              `}
-            >
-              <div className="flex justify-between items-start mb-2">
-                <div className="min-w-0 pr-2">
-                  <h4 className="font-bold text-gray-800 text-sm truncate">{campus.name}</h4>
-                  <div className="flex items-center gap-1 text-[10px] text-gray-500">
-                    <span>{isExpanded ? 'Gizle' : 'Detay'}</span>
-                    <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                  </div>
-                </div>
-                <div className={`text-right ${colorTheme.text}`}>
-                  <span className="text-lg font-bold block leading-none">
-                    %<CountUp to={Number(campus.occupancyRate.toFixed(0))} duration={1} />
-                  </span>
-                  <span className="text-[9px] font-bold opacity-80">{colorTheme.label}</span>
-                </div>
-              </div>
-
-              <div className="w-full bg-gray-100 rounded-full h-2 mb-2">
-                <div
-                  className={`h-2 rounded-full transition-all duration-1000 ${colorTheme.bar}`}
-                  style={{ width: `${campus.occupancyRate}%` }}
-                />
-              </div>
-
-              {/* Expanded Content - Overlay or pushed? Keeping it pushed but compact */}
-              {isExpanded && (
-                <div className="grid grid-cols-4 gap-1 mt-2 pt-2 border-t border-gray-100 animate-in slide-in-from-top-1">
-                  <div className="bg-slate-50 p-1.5 rounded text-center">
-                    <div className="text-slate-700 text-[10px] font-bold">{campus.totalArea.toLocaleString('tr-TR')}</div>
-                    <div className="text-[8px] text-slate-400">Toplam m²</div>
-                  </div>
-                  <div className="bg-indigo-50 p-1.5 rounded text-center">
-                    <div className="text-indigo-700 text-[10px] font-bold">{campus.usedArea.toLocaleString('tr-TR')}</div>
-                    <div className="text-[8px] text-indigo-400">Dolu m²</div>
-                  </div>
-                  <div className="bg-slate-50 p-1.5 rounded text-center">
-                    <div className="text-slate-600 text-[10px] font-bold">{campus.emptyArea.toLocaleString('tr-TR')}</div>
-                    <div className="text-[8px] text-slate-400">Boş m²</div>
-                  </div>
-                  <div className="bg-emerald-50 p-1.5 rounded text-center">
-                    {/* Formatted compact revenue */}
-                    <div className="text-emerald-700 text-[10px] font-bold truncate">
-                      {formatCurrency(Math.floor(avgRevenue), isPresentationMode)} TL
-                    </div>
-                    <div className="text-[8px] text-emerald-400">Ort. m² Başı Kira</div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Main Content Area (Row 2 - Fills Height) */}
-      <div className="flex-1 min-h-0 grid grid-cols-12 gap-3 pb-2">
-
-        {/* KPIs Column (Left) */}
-        <div className="col-span-2 flex flex-col gap-3 h-full overflow-y-auto pr-1">
-          {stats.map((stat, idx) => (
-            <div key={idx} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-center gap-1 hover:border-indigo-300 transition-all flex-1 min-h-[60px]">
-              <div className="flex items-center gap-2">
-                <div className={`p-1.5 rounded-md ${stat.bg}`}>
-                  <stat.icon className={`w-3.5 h-3.5 ${stat.color}`} />
-                </div>
-                <p className="text-[9px] font-bold text-gray-500 uppercase leading-tight">{stat.title}</p>
-              </div>
-              <p className="text-lg font-bold text-gray-900 tracking-tight self-end text-right w-full">{stat.renderValue}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Charts Column (Middle) */}
-        <div className="col-span-4 flex flex-col gap-3 h-full">
-
-          {/* Sector Chart */}
-          <div ref={sectorChartRef} className="flex-1 bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col min-h-0">
-            <div className="flex justify-between items-center mb-1">
-              <h3 className="text-xs font-bold text-gray-800 flex items-center gap-2">
-                <div className="w-1 h-3 bg-indigo-500 rounded-full"></div>
-                Sektörel
-              </h3>
-              <button onClick={() => setExpandedChart('SECTOR')} className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-3 py-1.5 rounded-md hover:bg-indigo-200 transition-colors shadow-sm">
-                Detaylı Görüntüle
-              </button>
-            </div>
-            <div className="flex-1 min-h-0 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  {/* Background track ring */}
-                  <Pie
-                    data={[{ value: 1 }]}
-                    cx="40%"
-                    cy="50%"
-                    innerRadius="68%"
-                    outerRadius="92%"
-                    dataKey="value"
-                    stroke="none"
-                    isAnimationActive={false}
-                  >
-                    <Cell fill="#f1f5f9" />
-                  </Pie>
-                  {/* @ts-ignore */}
-                  <Pie
-                    activeIndex={activeIndex ?? -1}
-                    activeShape={renderActiveShape}
-                    data={metrics.sectorData}
-                    cx="40%"
-                    cy="50%"
-                    innerRadius="70%"
-                    outerRadius="90%"
-                    paddingAngle={3}
-                    dataKey="value"
-                    onMouseEnter={onPieEnter}
-                    onMouseLeave={onPieLeave}
-                    onClick={handlePieClick}
-                    cornerRadius={6}
-                    stroke="none"
-                    animationBegin={0}
-                    animationDuration={800}
-                  >
-                    {metrics.sectorData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                    <Label content={<CustomCenterLabel hasActiveIndex={activeIndex !== null} totalCompanies={metrics.totalCompanies} />} position="center" />
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Business Tag Chart */}
-          <div ref={tagChartRef} className="flex-1 bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col min-h-0">
-            <div className="flex justify-between items-center mb-1">
-              <h3 className="text-xs font-bold text-gray-800 flex items-center gap-2">
-                <div className="w-1 h-3 bg-pink-500 rounded-full"></div>
-                İş Alanları
-              </h3>
-              <button onClick={() => setExpandedChart('TAG')} className="text-[10px] font-bold text-pink-700 bg-pink-100 px-3 py-1.5 rounded-md hover:bg-pink-200 transition-colors shadow-sm">
-                Detaylı Görüntüle
-              </button>
-            </div>
-            <div className="flex-1 min-h-0 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  {/* Background track ring */}
-                  <Pie
-                    data={[{ value: 1 }]}
-                    cx="40%"
-                    cy="50%"
-                    innerRadius="68%"
-                    outerRadius="92%"
-                    dataKey="value"
-                    stroke="none"
-                    isAnimationActive={false}
-                  >
-                    <Cell fill="#f1f5f9" />
-                  </Pie>
-                  {/* @ts-ignore */}
-                  <Pie
-                    activeIndex={activeTagIndex ?? -1}
-                    activeShape={renderActiveShape}
-                    data={tagData}
-                    cx="40%"
-                    cy="50%"
-                    innerRadius="70%"
-                    outerRadius="90%"
-                    paddingAngle={3}
-                    dataKey="value"
-                    onMouseEnter={onTagEnter}
-                    onMouseLeave={onTagLeave}
-                    onClick={handleTagClick}
-                    cornerRadius={6}
-                    stroke="none"
-                    animationBegin={200}
-                    animationDuration={800}
-                  >
-                    {tagData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[(index + 3) % COLORS.length]} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-        </div>
-
-        {/* Calendar Widget (Right) */}
-        <div ref={calendarRef} className="col-span-6 h-full min-h-0">
-          <ContractCalendar leases={allLeases} />
-        </div>
-
-      </div >
-
-      {/* Chart Detail Modal */}
-      {
-        expandedChart && createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative">
-              <button
-                onClick={() => setExpandedChart(null)}
-                className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors z-50"
+        <>
+          {/* Campus Details Grid (Row 1 - Compact) */}
+          <div ref={campusGridRef} className="flex flex-col gap-2 shrink-0 h-auto">
+            <div className="w-full overflow-hidden pb-1">
+              <div
+                className="flex transition-transform duration-500 ease-in-out w-full"
+                style={{ transform: `translateX(-${safeCampusPage * 100}%)` }}
               >
-                <X className="w-5 h-5 text-gray-600" />
-              </button>
+                {Array.from({ length: totalCampusPages }).map((_, pageIndex) => {
+                  const pageCampuses = metrics.campusData.slice(pageIndex * itemsPerPage, (pageIndex + 1) * itemsPerPage);
+                  return (
+                    <div key={pageIndex} className="w-full flex-shrink-0">
+                      <div className="grid grid-cols-3 gap-3 px-[2px]">
+                        {pageCampuses.map(campus => {
+                          const colorTheme = getOccupancyColor(campus.occupancyRate);
+                          const isExpanded = isAllCampusesExpanded || expandedCampusIds.includes(campus.id);
+                          const avgRevenue = campus.usedArea > 0 ? campus.revenue / campus.usedArea : 0;
 
-              <div className="p-6 border-b border-gray-100">
-                <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-                  <div className={`w - 2 h - 8 rounded - full ${expandedChart === 'SECTOR' ? 'bg-indigo-500' : 'bg-pink-500'} `}></div>
-                  {expandedChart === 'SECTOR' ? 'Tüm Sektörel Dağılım' : 'Tüm İş Etiketi Dağılımı'}
-                </h2>
+                          return (
+                            <div
+                              key={campus.id}
+                              onClick={() => toggleExpand(campus.id)}
+                              className={`
+                                bg-white rounded-xl border p-3 shadow-sm hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between
+                                ${isExpanded ? 'border-indigo-400 ring-1 ring-indigo-400' : 'border-gray-200'}
+                              `}
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="min-w-0 pr-2">
+                                  <h4 className="font-bold text-gray-800 text-sm truncate">{campus.name}</h4>
+                                  <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                                    <span>{isExpanded ? 'Gizle' : 'Detay'}</span>
+                                    <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                  </div>
+                                </div>
+                                <div className={`text-right ${colorTheme.text}`}>
+                                  <span className="text-lg font-bold block leading-none">
+                                    %<CountUp to={Number(campus.occupancyRate.toFixed(0))} duration={1} />
+                                  </span>
+                                  <span className="text-[9px] font-bold opacity-80">{colorTheme.label}</span>
+                                </div>
+                              </div>
+
+                              <div className="w-full bg-gray-100 rounded-full h-2 mb-2">
+                                <div
+                                  className={`h-2 rounded-full transition-all duration-1000 ${colorTheme.bar}`}
+                                  style={{ width: `${campus.occupancyRate}%` }}
+                                />
+                              </div>
+
+                              {/* Expanded Content - Overlay or pushed? Keeping it pushed but compact */}
+                              {isExpanded && (
+                                <div className="grid grid-cols-4 gap-1 mt-2 pt-2 border-t border-gray-100 animate-in slide-in-from-top-1">
+                                  <div className="bg-slate-50 p-1.5 rounded text-center">
+                                    <div className="text-slate-700 text-[10px] font-bold">{campus.totalArea.toLocaleString('tr-TR')}</div>
+                                    <div className="text-[8px] text-slate-400">Toplam m²</div>
+                                  </div>
+                                  <div className="bg-indigo-50 p-1.5 rounded text-center">
+                                    <div className="text-indigo-700 text-[10px] font-bold">{campus.usedArea.toLocaleString('tr-TR')}</div>
+                                    <div className="text-[8px] text-indigo-400">Dolu m²</div>
+                                  </div>
+                                  <div className="bg-slate-50 p-1.5 rounded text-center">
+                                    <div className="text-slate-600 text-[10px] font-bold">{campus.emptyArea.toLocaleString('tr-TR')}</div>
+                                    <div className="text-[8px] text-slate-400">Boş m²</div>
+                                  </div>
+                                  <div className="bg-emerald-50 p-1.5 rounded text-center">
+                                    {/* Formatted compact revenue */}
+                                    <div className="text-emerald-700 text-[10px] font-bold truncate">
+                                      {formatCurrency(Math.floor(avgRevenue), isPresentationMode)} TL
+                                    </div>
+                                    <div className="text-[8px] text-emerald-400">Ort. m² Başı Kira</div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+            </div>
+            {metrics.campusData.length > 0 && (
+              <div className="flex justify-between items-center relative h-7 mt-0.5">
+                <div className="w-1/3"></div>
+                <div className="w-1/3 flex justify-center items-center gap-2">
+                  <button
+                    onClick={() => setCurrentCampusPage(p => Math.max(0, p - 1))}
+                    disabled={currentCampusPage === 0}
+                    className="p-1.5 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                    title="Önceki"
+                  >
+                    <ChevronLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
+                  </button>
+                  <button
+                    onClick={toggleAllVisibleCampuses}
+                    className="p-1.5 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 shadow-sm transition-all group"
+                    title={areAllVisibleExpanded ? "Tümünü Daralt" : "Tümünü Genişlet"}
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${areAllVisibleExpanded ? 'rotate-180 text-indigo-500' : ''}`} />
+                  </button>
+                  <button
+                    onClick={() => setCurrentCampusPage(p => Math.min(totalCampusPages - 1, p + 1))}
+                    disabled={currentCampusPage === totalCampusPages - 1}
+                    className="p-1.5 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                    title="Sonraki"
+                  >
+                    <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                  </button>
+                </div>
+                <div className="w-1/3 flex justify-end">
+                  {totalCampusPages > 1 && (
+                    <div className="flex items-center gap-1.5">
+                      {getPaginationItems().map((page, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => typeof page === 'number' ? setCurrentCampusPage(page) : undefined}
+                          disabled={typeof page !== 'number'}
+                          className={`w-6 h-6 flex items-center justify-center text-[10px] font-bold transition-all ${page === '...'
+                            ? 'bg-transparent text-gray-400 cursor-default'
+                            : `rounded-md ${safeCampusPage === page
+                              ? 'bg-indigo-600 text-white shadow-sm'
+                              : 'bg-white border border-gray-200 text-gray-600 hover:bg-indigo-50 hover:border-indigo-200 cursor-pointer'}`
+                            }`}
+                        >
+                          {typeof page === 'number' ? page + 1 : page}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
-              <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-                {/* Left: Big Chart */}
-                <div className="flex-1 min-h-[400px] p-6 flex items-center justify-center bg-gray-50/30">
+          {/* Main Content Area (Row 2 - Fills Height) */}
+          <div className="flex-1 min-h-0 grid grid-cols-12 gap-3 pb-2">
+
+            {/* KPIs Column (Left) */}
+            <div className="col-span-2 flex flex-col gap-3 h-full overflow-y-auto pr-1">
+              {stats.map((stat, idx) => (
+                <div key={idx} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-center gap-1 hover:border-indigo-300 transition-all flex-1 min-h-[60px]">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-1.5 rounded-md ${stat.bg}`}>
+                      <stat.icon className={`w-3.5 h-3.5 ${stat.color}`} />
+                    </div>
+                    <p className="text-[9px] font-bold text-gray-500 uppercase leading-tight">{stat.title}</p>
+                  </div>
+                  <p className="text-lg font-bold text-gray-900 tracking-tight self-end text-right w-full">{stat.renderValue}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Charts Column (Middle) */}
+            <div className="col-span-4 flex flex-col gap-3 h-full">
+
+              {/* Sector Chart */}
+              <div ref={sectorChartRef} className="flex-1 bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col min-h-0">
+                <div className="flex justify-between items-center mb-1">
+                  <h3 className="text-xs font-bold text-gray-800 flex items-center gap-2">
+                    <div className="w-1 h-3 bg-indigo-500 rounded-full"></div>
+                    Sektörel
+                  </h3>
+                  <button onClick={() => setExpandedChart('SECTOR')} className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-3 py-1.5 rounded-md hover:bg-indigo-200 transition-colors shadow-sm">
+                    Detaylı Görüntüle
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 relative">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       {/* @ts-ignore */}
                       <Pie
-                        activeIndex={activeIndex}
-                        activeShape={renderActiveShape}
-                        data={expandedChart === 'SECTOR' ? metrics.sectorData : allTagData}
+                        {...({ activeIndex: activeIndex ?? -1, activeShape: renderActiveShape } as any)}
+                        data={metrics.sectorData}
                         cx="35%"
                         cy="50%"
-                        innerRadius={100}
-                        outerRadius={140}
+                        innerRadius={60}
+                        outerRadius={80}
                         paddingAngle={3}
                         dataKey="value"
                         onMouseEnter={onPieEnter}
                         onMouseLeave={onPieLeave}
-                        onClick={expandedChart === 'SECTOR' ? handlePieClick : handleTagClick}
+                        onClick={handlePieClick}
                         cornerRadius={8}
                         stroke="none"
                         className="cursor-pointer focus:outline-none"
                       >
-                        {(expandedChart === 'SECTOR' ? metrics.sectorData : allTagData).map((entry, index) => (
+                        {metrics.sectorData.map((entry, index) => (
                           <Cell
-                            key={`cell - ${index} `}
-                            fill={COLORS[(index + (expandedChart === 'TAG' ? 3 : 0)) % COLORS.length]}
+                            key={`cell-${index}`}
+                            fill={COLORS[index % COLORS.length]}
                           />
                         ))}
-                        <Label
-                          content={<CustomCenterLabel hasActiveIndex={activeIndex !== null} totalCompanies={metrics.totalCompanies} />}
-                          position="center"
-                        />
+                        <Label content={<CustomCenterLabel hasActiveIndex={activeIndex !== null} totalCompanies={metrics.totalCompanies} />} position="center" />
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
+              </div>
 
-                {/* Right: Scrollable List */}
-                <div className="w-full lg:w-[350px] border-l border-gray-100 flex flex-col bg-white">
-                  <div className="p-4 bg-gray-50 border-b border-gray-200 font-bold text-gray-500 text-xs uppercase tracking-wider">
-                    {expandedChart === 'SECTOR' ? 'Sektör Listesi' : 'Etiket Listesi'}
-                  </div>
-                  <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
-                    {(expandedChart === 'SECTOR' ? metrics.sectorData : allTagData).map((item, index) => (
-                      <div
-                        key={index}
-                        onClick={() => expandedChart === 'SECTOR' ? handlePieClick(item) : handleTagClick(item)}
-                        className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group border border-transparent hover:border-gray-200"
+              {/* Business Tag Chart */}
+              <div ref={tagChartRef} className="flex-1 bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col min-h-0">
+                <div className="flex justify-between items-center mb-1">
+                  <h3 className="text-xs font-bold text-gray-800 flex items-center gap-2">
+                    <div className="w-1 h-3 bg-pink-500 rounded-full"></div>
+                    İş Alanları
+                  </h3>
+                  <button onClick={() => setExpandedChart('TAG')} className="text-[10px] font-bold text-pink-700 bg-pink-100 px-3 py-1.5 rounded-md hover:bg-pink-200 transition-colors shadow-sm">
+                    Detaylı Görüntüle
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0 relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      {/* @ts-ignore */}
+                      <Pie
+                        {...({ activeIndex: activeTagIndex ?? -1, activeShape: renderActiveShape } as any)}
+                        data={tagData}
+                        cx="35%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={3}
+                        dataKey="value"
+                        onMouseEnter={onTagEnter}
+                        onMouseLeave={onTagLeave}
+                        onClick={handleTagClick}
+                        cornerRadius={8}
+                        stroke="none"
+                        className="cursor-pointer focus:outline-none"
                       >
-                        <div className="flex items-start gap-3 overflow-hidden">
-                          <div
-                            className="w-3 h-3 rounded-full shrink-0 shadow-sm mt-1.5"
-                            style={{ backgroundColor: COLORS[(index + (expandedChart === 'TAG' ? 3 : 0)) % COLORS.length] }}
+                        {tagData.map((entry, index) => (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={COLORS[(index + 3) % COLORS.length]}
                           />
-                          <span className="text-sm font-semibold text-gray-700 group-hover:text-indigo-700 transition-colors leading-snug">
-                            {item.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
-                            % {((item.value / metrics.totalCompanies) * 100).toFixed(1)}
-                          </span>
-                          <span className="text-xs font-bold text-gray-900 min-w-[30px] text-right">
-                            {item.value}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
-            </div>
-          </div>,
-          document.body
-        )
-      }
 
-      {/* Interactive Tutorial System via Portal */}
-      {showHelp && createPortal(
-        <div className="fixed inset-0 z-[10000] pointer-events-auto isolate">
-          {/* Note: Full screen backdrop removed to fix blur issue. Highligher uses shadow cutout. */}
-
-          {/* Dynamic Highlighter Box */}
-          {targetRect && (
-            <div
-              className="fixed z-[10001] transition-all duration-300 ease-out pointer-events-none rounded-2xl"
-              style={{
-                top: targetRect.top - 4,
-                left: targetRect.left - 4,
-                width: targetRect.width + 8,
-                height: targetRect.height + 8,
-                boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.65)' // Cutout effect (Darken rest of screen)
-              }}
-            >
-              {/* Border Ring (No BG) */}
-              <div className={`absolute inset-0 rounded-2xl border-[3px] animate-pulse ${helpSlide === 0 ? 'border-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.5)]' :
-                helpSlide === 1 ? 'border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.5)]' :
-                  helpSlide === 2 ? 'border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.5)]' :
-                    'border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]'
-                }`}></div>
             </div>
+
+            {/* Calendar Widget (Right) */}
+            <div ref={calendarRef} className="col-span-6 h-full min-h-0">
+              <ContractCalendar leases={allLeases} />
+            </div>
+
+          </div >
+
+          {/* Chart Detail Modal */}
+          {
+            expandedChart && createPortal(
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden relative">
+                  <button
+                    onClick={() => setExpandedChart(null)}
+                    className="absolute top-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors z-50"
+                  >
+                    <X className="w-5 h-5 text-gray-600" />
+                  </button>
+
+                  <div className="p-6 border-b border-gray-100">
+                    <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+                      <div className={`w - 2 h - 8 rounded - full ${expandedChart === 'SECTOR' ? 'bg-indigo-500' : 'bg-pink-500'} `}></div>
+                      {expandedChart === 'SECTOR' ? 'Tüm Sektörel Dağılım' : 'Tüm İş Etiketi Dağılımı'}
+                    </h2>
+                  </div>
+
+                  <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                    {/* Left: Big Chart (Original Style Pie) */}
+                    <div className="flex-1 min-h-[400px] p-6 flex items-center justify-center bg-gray-50/30">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          {/* @ts-ignore */}
+                          <Pie
+                            {...({ activeIndex: activeIndex ?? -1, activeShape: renderActiveShape } as any)}
+                            data={expandedChart === 'SECTOR' ? metrics.sectorData : allTagData}
+                            cx="35%"
+                            cy="50%"
+                            innerRadius={100}
+                            outerRadius={140}
+                            paddingAngle={3}
+                            dataKey="value"
+                            onMouseEnter={onPieEnter}
+                            onMouseLeave={onPieLeave}
+                            onClick={expandedChart === 'SECTOR' ? handlePieClick : handleTagClick}
+                            cornerRadius={8}
+                            stroke="none"
+                            className="cursor-pointer focus:outline-none"
+                          >
+                            {(expandedChart === 'SECTOR' ? metrics.sectorData : allTagData).map((entry, index) => (
+                              <Cell
+                                key={`cell-${index}`}
+                                fill={COLORS[(index + (expandedChart === 'TAG' ? 3 : 0)) % COLORS.length]}
+                              />
+                            ))}
+                            <Label
+                              content={<CustomCenterLabel hasActiveIndex={activeIndex !== null} totalCompanies={metrics.totalCompanies} />}
+                              position="center"
+                            />
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    {/* Right: Scrollable List Info */}
+                    <div className="w-full lg:w-[350px] border-l border-gray-100 flex flex-col bg-white">
+                      <div className="p-4 bg-gray-50 border-b border-gray-200 font-bold text-gray-500 text-xs uppercase tracking-wider">
+                        {expandedChart === 'SECTOR' ? 'Sektör Listesi' : 'Etiket Listesi'}
+                      </div>
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+                        {(expandedChart === 'SECTOR' ? metrics.sectorData : allTagData).map((item, index) => (
+                          <div
+                            key={index}
+                            onClick={() => expandedChart === 'SECTOR' ? handlePieClick(item) : handleTagClick(item)}
+                            className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group border border-transparent hover:border-gray-200"
+                          >
+                            <div className="flex items-start gap-3 overflow-hidden">
+                              <div
+                                className="w-3 h-3 rounded-full shrink-0 shadow-sm mt-1.5"
+                                style={{ backgroundColor: COLORS[(index + (expandedChart === 'TAG' ? 3 : 0)) % COLORS.length] }}
+                              />
+                              <span className="text-sm font-semibold text-gray-700 group-hover:text-indigo-700 transition-colors leading-snug">
+                                {item.name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                                % {((item.value / metrics.totalCompanies) * 100).toFixed(1)}
+                              </span>
+                              <span className="text-xs font-bold text-gray-900 min-w-[30px] text-right">
+                                {item.value}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>,
+              document.body
+            )
+          }
+
+          {/* Interactive Tutorial System via Portal */}
+          {showHelp && createPortal(
+            <div className="fixed inset-0 z-[10000] pointer-events-auto isolate">
+              {/* Note: Full screen backdrop removed to fix blur issue. Highligher uses shadow cutout. */}
+
+              {/* Dynamic Highlighter Box */}
+              {targetRect && (
+                <div
+                  className="fixed z-[10001] transition-all duration-300 ease-out pointer-events-none rounded-2xl"
+                  style={{
+                    top: targetRect.top - 4,
+                    left: targetRect.left - 4,
+                    width: targetRect.width + 8,
+                    height: targetRect.height + 8,
+                    boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.65)' // Cutout effect (Darken rest of screen)
+                  }}
+                >
+                  {/* Border Ring (No BG) */}
+                  <div className={`absolute inset-0 rounded-2xl border-[3px] animate-pulse ${helpSlide === 0 ? 'border-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.5)]' :
+                    helpSlide === 1 ? 'border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.5)]' :
+                      helpSlide === 2 ? 'border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.5)]' :
+                        'border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]'
+                    }`}></div>
+                </div>
+              )}
+
+              {/* Tutorial Cards - Positioned Relative to Target */}
+              {targetRect && (
+                <div
+                  className={`fixed z-[10002] bg-white rounded-2xl shadow-2xl p-5 max-w-sm border-2 animate-in fade-in zoom-in-95 duration-300 ${helpSlide === 0 ? 'border-indigo-500' :
+                    helpSlide === 1 ? 'border-pink-500' :
+                      helpSlide === 2 ? 'border-blue-500' :
+                        'border-emerald-500'
+                    }`}
+                  style={{
+                    // Auto position logic:
+                    // If chart (0, 1), try to place on RIGHT side first? Or Bottom if no space. 
+                    // Let's stick to "Bottom Aligned" logic generally, but if it goes off bottom, move it up.
+                    // Simple version: 16px below target.
+                    top: Math.min(window.innerHeight - 250, targetRect.bottom + 16),
+                    left: Math.min(Math.max(16, targetRect.left + (targetRect.width / 2) - 192), window.innerWidth - 400) // Center horizontally relative to target
+                  }}
+                >
+                  {/* Arrow pointing up to target */}
+                  <div
+                    className={`absolute -top-2 w-4 h-4 bg-white border-t-2 border-l-2 transform rotate-45 ${helpSlide === 0 ? 'border-indigo-500' :
+                      helpSlide === 1 ? 'border-pink-500' :
+                        helpSlide === 2 ? 'border-blue-500' :
+                          'border-emerald-500'
+                      }`}
+                    style={{
+                      left: Math.min(Math.max(20, (targetRect.left - Math.min(Math.max(16, targetRect.left + (targetRect.width / 2) - 192), window.innerWidth - 400)) + (targetRect.width / 2) - 8), 340)
+                    }}
+                  ></div>
+
+                  {/* Slide 0: Sector */}
+                  {helpSlide === 0 && (
+                    <>
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="p-2 bg-indigo-100 rounded-lg shrink-0">
+                          <Info className="w-5 h-5 text-indigo-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-base">Sektörel Dağılım</h3>
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                            Bu grafik, teknokentteki firmaların hangi sektörlerde yoğunlaştığını gösterir. Her dilim üzerine geldiğinizde detaylı bilgi görüntülenir.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setShowHelp(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Atla</button>
+                        <button onClick={() => setHelpSlide(1)} className="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">Sıradaki</button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Slide 1: Tags */}
+                  {helpSlide === 1 && (
+                    <>
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="p-2 bg-pink-100 rounded-lg shrink-0">
+                          <Info className="w-5 h-5 text-pink-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-base">İş Alanları</h3>
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                            Firmaların iş alanı etiketlerine göre dağılımını gösterir. Bir firma birden fazla iş alanında faaliyet gösterebilir.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setShowHelp(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Atla</button>
+                        <button onClick={() => setHelpSlide(2)} className="px-3 py-1.5 text-xs font-bold bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors shadow-lg shadow-pink-200">Sıradaki</button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Slide 2: Campus */}
+                  {helpSlide === 2 && (
+                    <>
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="p-2 bg-blue-100 rounded-lg shrink-0">
+                          <Info className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-base">Kampüs Kartları</h3>
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                            Her kampüsün anlık doluluk durumunu gösterir. Karta tıklayarak detaylı istatistikleri görüntüleyebilirsiniz.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setShowHelp(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Atla</button>
+                        <button onClick={() => setHelpSlide(3)} className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">Sıradaki</button>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Slide 3: Calendar */}
+                  {helpSlide === 3 && (
+                    <>
+                      <div className="flex items-start gap-3 mb-3">
+                        <div className="p-2 bg-emerald-100 rounded-lg shrink-0">
+                          <CalendarIcon className="w-5 h-5 text-emerald-600" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-base">Sözleşme Takvimi</h3>
+                          <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                            Firmaların sözleşme bitiş tarihlerini takip edin. Bir güne tıklayarak o gün sözleşmesi biten firmaların listesini görüntüleyin.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setShowHelp(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Kapat</button>
+                        <button onClick={() => { setShowHelp(false); setHelpSlide(0); }} className="px-3 py-1.5 text-xs font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200">Tamamla</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>,
+            document.body
           )}
 
-          {/* Tutorial Cards - Positioned Relative to Target */}
-          {targetRect && (
-            <div
-              className={`fixed z-[10002] bg-white rounded-2xl shadow-2xl p-5 max-w-sm border-2 animate-in fade-in zoom-in-95 duration-300 ${helpSlide === 0 ? 'border-indigo-500' :
-                helpSlide === 1 ? 'border-pink-500' :
-                  helpSlide === 2 ? 'border-blue-500' :
-                    'border-emerald-500'
-                }`}
-              style={{
-                // Auto position logic:
-                // If chart (0, 1), try to place on RIGHT side first? Or Bottom if no space. 
-                // Let's stick to "Bottom Aligned" logic generally, but if it goes off bottom, move it up.
-                // Simple version: 16px below target.
-                top: Math.min(window.innerHeight - 250, targetRect.bottom + 16),
-                left: Math.min(Math.max(16, targetRect.left + (targetRect.width / 2) - 192), window.innerWidth - 400) // Center horizontally relative to target
-              }}
-            >
-              {/* Arrow pointing up to target */}
-              <div
-                className={`absolute -top-2 w-4 h-4 bg-white border-t-2 border-l-2 transform rotate-45 ${helpSlide === 0 ? 'border-indigo-500' :
-                  helpSlide === 1 ? 'border-pink-500' :
-                    helpSlide === 2 ? 'border-blue-500' :
-                      'border-emerald-500'
-                  }`}
-                style={{
-                  left: Math.min(Math.max(20, (targetRect.left - Math.min(Math.max(16, targetRect.left + (targetRect.width / 2) - 192), window.innerWidth - 400)) + (targetRect.width / 2) - 8), 340)
-                }}
-              ></div>
-
-              {/* Slide 0: Sector */}
-              {helpSlide === 0 && (
-                <>
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="p-2 bg-indigo-100 rounded-lg shrink-0">
-                      <Info className="w-5 h-5 text-indigo-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-base">Sektörel Dağılım</h3>
-                      <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                        Bu grafik, teknokentteki firmaların hangi sektörlerde yoğunlaştığını gösterir. Her dilim üzerine geldiğinizde detaylı bilgi görüntülenir.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setShowHelp(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Atla</button>
-                    <button onClick={() => setHelpSlide(1)} className="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">Sıradaki</button>
-                  </div>
-                </>
-              )}
-
-              {/* Slide 1: Tags */}
-              {helpSlide === 1 && (
-                <>
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="p-2 bg-pink-100 rounded-lg shrink-0">
-                      <Info className="w-5 h-5 text-pink-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-base">İş Alanları</h3>
-                      <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                        Firmaların iş alanı etiketlerine göre dağılımını gösterir. Bir firma birden fazla iş alanında faaliyet gösterebilir.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setShowHelp(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Atla</button>
-                    <button onClick={() => setHelpSlide(2)} className="px-3 py-1.5 text-xs font-bold bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition-colors shadow-lg shadow-pink-200">Sıradaki</button>
-                  </div>
-                </>
-              )}
-
-              {/* Slide 2: Campus */}
-              {helpSlide === 2 && (
-                <>
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="p-2 bg-blue-100 rounded-lg shrink-0">
-                      <Info className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-base">Kampüs Kartları</h3>
-                      <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                        Her kampüsün anlık doluluk durumunu gösterir. Karta tıklayarak detaylı istatistikleri görüntüleyebilirsiniz.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setShowHelp(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Atla</button>
-                    <button onClick={() => setHelpSlide(3)} className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200">Sıradaki</button>
-                  </div>
-                </>
-              )}
-
-              {/* Slide 3: Calendar */}
-              {helpSlide === 3 && (
-                <>
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="p-2 bg-emerald-100 rounded-lg shrink-0">
-                      <CalendarIcon className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-base">Sözleşme Takvimi</h3>
-                      <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                        Firmaların sözleşme bitiş tarihlerini takip edin. Bir güne tıklayarak o gün sözleşmesi biten firmaların listesini görüntüleyin.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setShowHelp(false)} className="px-3 py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">Kapat</button>
-                    <button onClick={() => { setShowHelp(false); setHelpSlide(0); }} className="px-3 py-1.5 text-xs font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200">Tamamla</button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>,
-        document.body
-      )}
-
-      {/* Floating Tutorial Button */}
-      <button
-        onClick={() => { setShowHelp(true); setHelpSlide(0); }}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center group z-[9998]"
-        title="Dashboard Rehberi"
-      >
-        <Info className="w-7 h-7 group-hover:scale-110 transition-transform" />
-      </button>
-      </>
+          {/* Floating Tutorial Button */}
+          <button
+            onClick={() => { setShowHelp(true); setHelpSlide(0); }}
+            className="fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all flex items-center justify-center group z-[9998]"
+            title="Dashboard Rehberi"
+          >
+            <Info className="w-7 h-7 group-hover:scale-110 transition-transform" />
+          </button>
+        </>
       )}
     </div >
   );

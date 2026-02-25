@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { api } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { Filter, Clock, Tag, RefreshCw, X, Search, Terminal, Activity, ChevronRight, User, AlertTriangle, RotateCcw, CheckCircle, Info, Loader2 } from 'lucide-react';
+import { Filter, Clock, Tag, RefreshCw, X, Search, Terminal, Activity, ChevronRight, ChevronLeft, User, AlertTriangle, RotateCcw, CheckCircle, Info, Loader2 } from 'lucide-react';
 import { Dropdown } from '../components/Dropdown';
 import { AuditLog, RollbackPreview } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -313,6 +313,9 @@ export const AuditLogs: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAuthLogs, setShowAuthLogs] = useState(false);
 
+  const ITEMS_PER_PAGE = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Dropdown Options
   const timeOptions = [
     { value: 'ALL', label: 'Tüm Zamanlar' },
@@ -378,6 +381,17 @@ export const AuditLogs: React.FC = () => {
       return matchesTime && matchesAction && matchesSearch && matchesAuth;
     });
   }, [logs, timeFilter, actionFilter, searchTerm, showAuthLogs]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filteredLogs.length]);
+
+  const totalPages = Math.ceil(filteredLogs.length / ITEMS_PER_PAGE);
+
+  const paginatedLogs = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredLogs.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredLogs, currentPage]);
 
   const resetFilters = () => {
     setTimeFilter('ALL');
@@ -524,122 +538,178 @@ export const AuditLogs: React.FC = () => {
 
       {/* Logs Table */}
       {!isLoading && !error && logs.length > 0 && (
-      <div ref={logsTableRef} className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden min-h-[400px]">
+        <div ref={logsTableRef} className="bg-white rounded-xl border border-gray-300 shadow-sm overflow-hidden min-h-[400px]">
 
-        {/* Desktop View (Table) */}
-        <div className="hidden lg:block overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Zaman</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Kullanıcı</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Kaynak</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">İşlem</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Detaylar</th>
-                <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Trace ID</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredLogs.length > 0 ? (
-                filteredLogs.map((log) => (
-                  <tr
-                    key={log.id}
-                    onClick={() => setSelectedLog(log)}
-                    className="hover:bg-indigo-50/50 transition-colors cursor-pointer group"
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-bold font-mono">
-                      {new Date(log.timestamp).toLocaleString('tr-TR')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-slate-800 flex items-center gap-2">
-                      <div className="p-1.5 bg-slate-200/50 rounded-full border border-slate-200">
-                        <User className="w-3.5 h-3.5 text-slate-600" />
-                      </div>
-                      {log.user || 'Sistem'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-gray-900">
-                      <span className="bg-gray-100 px-2 py-1 rounded border border-gray-200">{log.entityType}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-black uppercase tracking-wide rounded-md border shadow-sm ${getActionStyles(log.action)}`}>
-                        {actionLabels[log.action] || log.action}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-700 font-bold max-w-md truncate group-hover:text-indigo-700 transition-colors" title={log.details}>
-                      {log.details}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-400 font-mono font-bold">
-                      {log.traceId.slice(0, 8)}...
-                    </td>
-                  </tr>
-                ))
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile View (Cards) */}
-        <div className="lg:hidden divide-y divide-gray-200 bg-gray-50/50">
-          {filteredLogs.length > 0 ? (
-            filteredLogs.map((log) => (
-              <div
-                key={log.id}
-                className="p-4 bg-white space-y-3 active:bg-slate-50 border-b border-gray-100"
-                onClick={() => setSelectedLog(log)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-lg border shadow-sm ${log.action === 'DELETE' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>
-                      <Activity className="w-4 h-4" />
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-black text-gray-900">{log.entityType}</span>
-                      <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1 mt-0.5">
-                        <User className="w-3 h-3" />
+          {/* Desktop View (Table) */}
+          <div className="hidden lg:block overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Zaman</th>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Kullanıcı</th>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Kaynak</th>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">İşlem</th>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Detaylar</th>
+                  <th className="px-6 py-4 text-left text-xs font-black text-gray-600 uppercase tracking-wider">Trace ID</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {paginatedLogs.length > 0 ? (
+                  paginatedLogs.map((log) => (
+                    <tr
+                      key={log.id}
+                      onClick={() => setSelectedLog(log)}
+                      className="hover:bg-indigo-50/50 transition-colors cursor-pointer group"
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-bold font-mono">
+                        {new Date(log.timestamp).toLocaleString('tr-TR')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-slate-800 flex items-center gap-2">
+                        <div className="p-1.5 bg-slate-200/50 rounded-full border border-slate-200">
+                          <User className="w-3.5 h-3.5 text-slate-600" />
+                        </div>
                         {log.user || 'Sistem'}
-                      </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-black text-gray-900">
+                        <span className="bg-gray-100 px-2 py-1 rounded border border-gray-200">{log.entityType}</span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-black uppercase tracking-wide rounded-md border shadow-sm ${getActionStyles(log.action)}`}>
+                          {actionLabels[log.action] || log.action}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-700 font-bold max-w-md truncate group-hover:text-indigo-700 transition-colors" title={log.details}>
+                        {log.details}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-400 font-mono font-bold">
+                        {log.traceId.slice(0, 8)}...
+                      </td>
+                    </tr>
+                  ))
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile View (Cards) */}
+          <div className="lg:hidden divide-y divide-gray-200 bg-gray-50/50">
+            {paginatedLogs.length > 0 ? (
+              paginatedLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="p-4 bg-white space-y-3 active:bg-slate-50 border-b border-gray-100"
+                  onClick={() => setSelectedLog(log)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-lg border shadow-sm ${log.action === 'DELETE' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`}>
+                        <Activity className="w-4 h-4" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-sm font-black text-gray-900">{log.entityType}</span>
+                        <span className="text-[10px] uppercase font-bold text-gray-400 flex items-center gap-1 mt-0.5">
+                          <User className="w-3 h-3" />
+                          {log.user || 'Sistem'}
+                        </span>
+                      </div>
                     </div>
+                    <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wide rounded-md border ${getActionStyles(log.action)}`}>
+                      {actionLabels[log.action] || log.action}
+                    </span>
                   </div>
-                  <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wide rounded-md border ${getActionStyles(log.action)}`}>
-                    {actionLabels[log.action] || log.action}
-                  </span>
-                </div>
 
-                <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono font-bold pl-1">
-                  <Clock className="w-3.5 h-3.5" />
-                  {new Date(log.timestamp).toLocaleString('tr-TR')}
-                </div>
-
-                <div className="bg-slate-50 p-3 rounded-xl border border-gray-200">
-                  <p className="text-xs font-bold text-slate-800 leading-relaxed">{log.details}</p>
-                </div>
-
-                <div className="flex items-center justify-between pt-1">
-                  <div className="flex items-center gap-1 text-[9px] text-gray-400 font-mono">
-                    <Terminal className="w-3 h-3" />
-                    {log.traceId.slice(0, 12)}...
+                  <div className="flex items-center gap-2 text-[10px] text-gray-500 font-mono font-bold pl-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    {new Date(log.timestamp).toLocaleString('tr-TR')}
                   </div>
-                  <ChevronRight className="w-4 h-4 text-gray-300" />
+
+                  <div className="bg-slate-50 p-3 rounded-xl border border-gray-200">
+                    <p className="text-xs font-bold text-slate-800 leading-relaxed">{log.details}</p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-1 text-[9px] text-gray-400 font-mono">
+                      <Terminal className="w-3 h-3" />
+                      {log.traceId.slice(0, 12)}...
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                  </div>
                 </div>
+              ))
+            ) : null}
+          </div>
+
+          {filteredLogs.length === 0 && (
+            <div className="px-6 py-12 text-center text-gray-400">
+              <Filter className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <p className="font-bold text-black text-sm">Seçilen kriterlere uygun kayıt bulunamadı.</p>
+              <button onClick={resetFilters} className="text-indigo-600 text-[11px] sm:text-sm mt-2 font-bold hover:underline">Filtreleri Temizle</button>
+            </div>
+          )}
+
+          {filteredLogs.length > 0 && (
+            <div className="bg-gray-50 px-4 sm:px-6 py-3 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-[10px] sm:text-xs text-gray-500 font-bold w-full sm:w-auto text-center sm:text-left">
+                <span className="text-black">Toplam {filteredLogs.length} kayıt</span>
+                <span className="mx-2 text-gray-300">|</span>
+                Sayfa {currentPage} / {totalPages || 1}
               </div>
-            ))
-          ) : null}
+
+              <div className="flex justify-center items-center gap-1 w-full sm:w-auto">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 sm:p-2 rounded-lg border border-gray-200 text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
+                  title="Önceki Sayfa"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1 mx-2">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                    if (
+                      page === 1 ||
+                      page === totalPages ||
+                      (page >= currentPage - 1 && page <= currentPage + 1)
+                    ) {
+                      return (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg text-[10px] sm:text-xs font-bold transition-all ${currentPage === page
+                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
+                              : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300'
+                            }`}
+                        >
+                          {page}
+                        </button>
+                      );
+                    } else if (
+                      page === currentPage - 2 ||
+                      page === currentPage + 2
+                    ) {
+                      return <span key={page} className="text-gray-400 px-0.5" >...</span>;
+                    }
+                    return null;
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 sm:p-2 rounded-lg border border-gray-200 text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors"
+                  title="Sonraki Sayfa"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="hidden sm:block text-[10px] sm:text-xs text-gray-500 font-bold text-right pt-2 sm:pt-0 w-full sm:w-auto">
+                Sunucu zamanı: {new Date().toLocaleTimeString('tr-TR')}
+              </div>
+            </div>
+          )}
         </div>
-
-        {filteredLogs.length === 0 && (
-          <div className="px-6 py-12 text-center text-gray-400">
-            <Filter className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p className="font-bold text-black text-sm">Seçilen kriterlere uygun kayıt bulunamadı.</p>
-            <button onClick={resetFilters} className="text-indigo-600 text-[11px] sm:text-sm mt-2 font-bold hover:underline">Filtreleri Temizle</button>
-          </div>
-        )}
-
-        {filteredLogs.length > 0 && (
-          <div className="bg-gray-50 px-4 sm:px-6 py-3 border-t border-gray-200 text-[10px] sm:text-xs text-gray-500 flex justify-between font-bold">
-            <span className="text-black">Gösterilen: {filteredLogs.length} kayıt</span>
-            <span className="hidden sm:inline">Sunucu zamanı: {new Date().toLocaleTimeString('tr-TR')}</span>
-          </div>
-        )}
-      </div>
       )}
       {/* End of Logs Table */}
 

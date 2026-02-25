@@ -66,7 +66,7 @@ export const LeaseRowItem: React.FC<LeaseRowItemProps> = memo(({ item, isSelecte
             </div>
             <div className="col-span-2 flex flex-col text-center">
                 <div className="text-xs font-black text-indigo-600">
-                    {formatCurrency(item.lease.monthlyRent, isPresentationMode)} {isPending ? 'TL/m²' : 'TL'}
+                    {!item.lease.monthlyRent || item.lease.monthlyRent < 1.01 || isNaN(Number(item.lease.monthlyRent)) ? 'ÜCRETSİZ' : `${formatCurrency(item.lease.monthlyRent, isPresentationMode)} ${isPending ? 'TL/m²' : 'TL'}`}
                 </div>
                 <div className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">
                     {isPending ? 'Birim Fiyat' : 'Aylık Kira'}

@@ -191,38 +191,47 @@ export const CompanyDetailModal: React.FC<CompanyDetailModalProps> = ({ data, on
 
 
     // Documents
-    const [documents, setDocuments] = useState<LeaseDocument[]>(data.lease.documents || []);
+    const [documents, setDocuments] = useState<LeaseDocument[]>(
+        data.lease.id === 'PENDING' ? (data.company.documents || []) : (data.lease.documents || [])
+    );
+
+    useEffect(() => {
+        setDocuments(data.lease.id === 'PENDING' ? (data.company.documents || []) : (data.lease.documents || []));
+    }, [data.lease, data.company.documents]);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
-            // Mock upload
-            const newDoc: LeaseDocument = {
-                id: Math.random().toString(36).substr(2, 9),
-                name: file.name,
-                type: 'OTHER',
-                url: URL.createObjectURL(file),
-                uploadDate: new Date().toISOString()
-            };
 
-            try {
-                // Determine if it's a company doc or lease doc. 
-                // Since api.addDocument distinguishes via isPending (or just simpler implementation),
-                // We'll assume we can add it. 
-                // For now, let's just update local state and assume backend sync on save or add specialized endpoint.
-                // In my API implementation, I had `addDocument`.
-                await api.addDocument(data.company.id, newDoc, data.lease.id === 'PENDING');
-                setDocuments([...documents, newDoc]);
-                onUpdate();
-            } catch (e) { console.error(e); }
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const base64Url = reader.result as string;
+
+                const newDoc: LeaseDocument = {
+                    id: Math.random().toString(36).substr(2, 9),
+                    name: file.name,
+                    type: 'OTHER',
+                    url: base64Url,
+                    uploadDate: new Date().toISOString()
+                } as any; // Type assertion if uploadDate isn't directly in LeaseDocument
+
+                try {
+                    await api.addDocument(data.company.id, newDoc, data.lease.id === 'PENDING');
+                    onUpdate(); // Re-fetch data, the useEffect will update the state
+                } catch (e: any) {
+                    console.error(e);
+                    alert(e.message || "Belge yüklenirken bir hata oluştu.");
+                }
+            };
+            reader.readAsDataURL(file);
         }
     };
 
     const handleDeleteDocument = async (docId: string, docName: string) => {
         try {
-            await api.deleteDocument(data.company.id, docName);
-            setDocuments(documents.filter(d => d.id !== docId));
+            await api.deleteDocument(data.company.id, docName, data.lease.id === 'PENDING');
             onUpdate();
         } catch (e) { console.error(e); }
     };
@@ -266,7 +275,26 @@ export const CompanyDetailModal: React.FC<CompanyDetailModalProps> = ({ data, on
                             <div className="space-y-4 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
                                 <div className="flex justify-between items-center mb-2">
                                     <h3 className="font-bold flex items-center gap-2"><Building2 className="w-4 h-4" /> Temel Bilgiler</h3>
-                                    <Button variant="ghost" onClick={() => setIsEditMode(!isEditMode)}>{isEditMode ? 'İptal' : 'Düzenle'}</Button>
+                                    <Button variant="ghost" onClick={() => {
+                                        if (isEditMode) {
+                                            setIsEditMode(false);
+                                            setEditFormData({
+                                                name: data.company.name,
+                                                sector: data.company.sector,
+                                                businessAreas: data.company.businessAreas || [],
+                                                managerName: data.company.managerName,
+                                                managerPhone: data.company.managerPhone,
+                                                managerEmail: data.company.managerEmail,
+                                                employeeCount: data.company.employeeCount,
+                                                startDate: isoToDisplay(data.lease.startDate),
+                                                endDate: isoToDisplay(data.lease.endDate),
+                                                operatingFee: data.lease.operatingFee || 400,
+                                                monthlyRent: data.lease.monthlyRent || 0
+                                            });
+                                        } else {
+                                            setIsEditMode(true);
+                                        }
+                                    }}>{isEditMode ? 'İptal' : 'Düzenle'}</Button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div><label className="text-xs font-bold text-gray-500">Ünvan</label><input disabled={!isEditMode} value={editFormData.name} onChange={e => setEditFormData({ ...editFormData, name: e.target.value })} className="w-full border p-2 rounded text-sm" /></div>

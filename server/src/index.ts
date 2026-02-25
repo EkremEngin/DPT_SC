@@ -3,6 +3,7 @@ import cors from 'cors';
 // import dotenv from 'dotenv'; // Load env vars via system/render
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 
 // Import Routes
 import campusRoutes from './routes/campuses';
@@ -43,6 +44,7 @@ if (missingEnvVars.length > 0) {
 
 // Security Middleware
 app.use(helmet());
+app.use(compression()); // Compress JSON payloads
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 

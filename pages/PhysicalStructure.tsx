@@ -49,7 +49,7 @@ interface FloorRowProps {
     onEmptyClick: (blockId: string, floor: string) => void;
 }
 
-const FloorRow: React.FC<FloorRowProps> = ({ block, floorCap, currentUnits, allCompanies, onRefresh, highlightedUnitId, onUnitClick, onEmptyClick }) => {
+const FloorRow: React.FC<FloorRowProps> = React.memo(({ block, floorCap, currentUnits, allCompanies, onRefresh, highlightedUnitId, onUnitClick, onEmptyClick }) => {
     const allocations = currentUnits.filter(u => u.blockId === block.id && u.floor === floorCap.floor);
     const usedSqM = allocations.reduce((sum, a) => (a.status === 'OCCUPIED' || a.status === 'RESERVED' ? sum + a.areaSqM : sum), 0);
     const emptySqM = floorCap.totalSqM - usedSqM;
@@ -274,7 +274,7 @@ const FloorRow: React.FC<FloorRowProps> = ({ block, floorCap, currentUnits, allC
 
         </div>
     );
-};
+});
 
 import { formatCurrency } from '../utils/format';
 
@@ -1371,7 +1371,7 @@ export const PhysicalStructure: React.FC = () => {
                                                                             <input
                                                                                 type="text"
                                                                                 className="w-full pl-2 p-1.5 bg-gray-100 border border-gray-200 rounded text-xs font-bold outline-none text-gray-500 cursor-not-allowed"
-                                                                                value={isEditMode ? (fixedUnitPriceRef.current < 0.01 ? 'ÜCRETSİZ' : fixedUnitPriceRef.current.toFixed(2)) : (currentRentPerSqM < 0.01 ? 'ÜCRETSİZ' : currentRentPerSqM.toFixed(2))}
+                                                                                value={isEditMode ? (fixedUnitPriceRef.current < 1.01 ? 'ÜCRETSİZ' : fixedUnitPriceRef.current.toFixed(2)) : (currentRentPerSqM < 1.01 ? 'ÜCRETSİZ' : currentRentPerSqM.toFixed(2))}
                                                                                 disabled
                                                                                 readOnly
                                                                             />
@@ -1379,7 +1379,7 @@ export const PhysicalStructure: React.FC = () => {
                                                                         </div>
                                                                     ) : (
                                                                         <div className="font-bold text-gray-900 text-xs">
-                                                                            {currentRentPerSqM < 0.01 ? 'ÜCRETSİZ' : `${formatCurrency(currentRentPerSqM, isPresentationMode)} TL`}
+                                                                            {currentRentPerSqM < 1.01 ? 'ÜCRETSİZ' : `${formatCurrency(currentRentPerSqM, isPresentationMode)} TL`}
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -1387,7 +1387,7 @@ export const PhysicalStructure: React.FC = () => {
                                                                 <div>
                                                                     <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Aylık Kira</label>
                                                                     <div className="font-bold text-gray-900 text-xs">
-                                                                        {currentMonthlyRent < 0.01 ? 'ÜCRETSİZ' : `${formatCurrency(currentMonthlyRent, isPresentationMode)} TL`}
+                                                                        {currentMonthlyRent < 1.01 ? 'ÜCRETSİZ' : `${formatCurrency(currentMonthlyRent, isPresentationMode)} TL`}
                                                                     </div>
                                                                 </div>
 
@@ -1417,7 +1417,7 @@ export const PhysicalStructure: React.FC = () => {
                                                                         <div className="font-bold text-slate-800 text-sm">
                                                                             {(() => {
                                                                                 const fee = activeLease?.lease.operatingFee ?? (blocks.find(b => b.id === selectedBlockId)?.defaultOperatingFee ?? 400);
-                                                                                return fee === 0 ? 'ÜCRETSİZ' : `${formatCurrency(fee, isPresentationMode)} TL / Ay`;
+                                                                                return fee < 1.01 ? 'ÜCRETSİZ' : `${formatCurrency(fee, isPresentationMode)} TL / Ay`;
                                                                             })()}
                                                                         </div>
                                                                     )}

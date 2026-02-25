@@ -731,7 +731,9 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
         monthlyRent: data.lease.monthlyRent || 0
     });
 
-    const [documents, setDocuments] = useState<LeaseDocument[]>(() => [...(data.lease.documents || [])]);
+    const [documents, setDocuments] = useState<LeaseDocument[]>(() =>
+        data.lease.id === 'PENDING' ? [...(data.company.documents || [])] : [...(data.lease.documents || [])]
+    );
 
     // ...
 
@@ -872,11 +874,15 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
         return JSON.stringify(sortedOriginal) !== JSON.stringify(sortedCurrent);
     }, [data.company.businessAreas, editFormData.businessAreas]);
 
+    const [isSavingBusinessAreas, setIsSavingBusinessAreas] = useState(false);
     const handleSaveBusinessAreas = async () => {
         try {
+            setIsSavingBusinessAreas(true);
             await api.updateCompany(data.company.id, { ...data.company, businessAreas: editFormData.businessAreas });
-            onUpdate();
-        } catch (err) { console.error(err); }
+            await onUpdate();
+        } catch (err) { console.error(err); } finally {
+            setIsSavingBusinessAreas(false);
+        }
     };
 
     const handleAddSector = async () => {
@@ -1024,11 +1030,8 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                 url: fileDataUrl,
                 type: isImage ? 'IMAGE' : isPdf ? 'PDF' : 'WORD'
             };
-            if (data.lease.id === 'PENDING') {
-                await api.addDocument(data.company.id, newDoc, true);
-            } else {
-                await api.addDocument(data.lease.id, newDoc, false);
-            }
+
+            // Just update local state; save will happen when "Kaydet" is clicked
             setDocuments(prev => [...prev, newDoc]);
             setIsUploading(false);
         };
@@ -1122,6 +1125,36 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
         setDeleteModal({ ...deleteModal, isOpen: false });
     };
 
+    const hasNewDocuments = useMemo(() => {
+        return documents.some(d => d.url.startsWith('data:'));
+    }, [documents]);
+
+    const [isSavingDocs, setIsSavingDocs] = useState(false);
+    const handleSaveDocuments = async () => {
+        setIsSavingDocs(true);
+        try {
+            const newDocs = documents.filter(d => d.url.startsWith('data:'));
+            for (const doc of newDocs) {
+                if (data.lease.id === 'PENDING') {
+                    await api.addDocument(data.company.id, doc, true);
+                } else {
+                    await api.addDocument(data.lease.id, doc, false);
+                }
+            }
+            await onUpdate();
+        } catch (e) {
+            console.error("Belge kaydetme hatası:", e);
+            alert("Belgeler kaydedilirken bir hata oluştu.");
+        } finally {
+            setIsSavingDocs(false);
+        }
+    };
+
+    // Update documents when data changes so it resets staged uploads on refresh
+    useEffect(() => {
+        setDocuments(data.lease.id === 'PENDING' ? [...(data.company.documents || [])] : [...(data.lease.documents || [])]);
+    }, [data.lease, data.company.documents]);
+
     const isPending = data.lease.id === 'PENDING';
     const displaySectors = useMemo(() => {
         if (!editFormData.sector) return sectorList;
@@ -1179,15 +1212,6 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                             <div className="mb-6">
                                 <div className="flex items-center justify-between mb-2">
                                     <h4 className="text-xs font-bold text-gray-400 uppercase">Firmanın Sahip Olduğu İş Etiketleri</h4>
-                                    {hasBusinessAreaChanges && (
-                                        <button
-                                            onClick={handleSaveBusinessAreas}
-                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm animate-pulse"
-                                        >
-                                            <Save className="w-3.5 h-3.5" />
-                                            Değişiklikleri Kaydet
-                                        </button>
-                                    )}
                                 </div>
                                 <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 min-h-[60px]">
                                     {editFormData.businessAreas && editFormData.businessAreas.length > 0 ? (
@@ -1504,14 +1528,14 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                                                 </div>
                                                             ) : (
                                                                 <div className="font-bold text-gray-900 text-xs truncate">
-                                                                    {displayRentPerSqm < 0.01 ? 'ÜCRETSİZ' : `${formatCurrency(displayRentPerSqm, isPresentationMode)} TL`}
+                                                                    {displayRentPerSqm < 1.01 ? 'ÜCRETSİZ' : `${formatCurrency(displayRentPerSqm, isPresentationMode)} TL`}
                                                                 </div>
                                                             )}
                                                         </div>
                                                         <div>
                                                             <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Aylık Kira</label>
                                                             <div className="font-bold text-gray-900 text-xs truncate">
-                                                                {isUnallocated ? '-' : (Number(displayMonthlyRent) < 0.01) ? 'ÜCRETSİZ' : `${formatCurrency(displayMonthlyRent as number, isPresentationMode)} TL`}
+                                                                {isUnallocated ? '-' : (Number(displayMonthlyRent) < 1.01) ? 'ÜCRETSİZ' : `${formatCurrency(displayMonthlyRent as number, isPresentationMode)} TL`}
                                                             </div>
                                                         </div>
                                                     </>
@@ -1542,7 +1566,7 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                                     </div>
                                                 ) : (
                                                     <div className="font-bold text-gray-900 text-xs truncate">
-                                                        {isUnallocated ? '-' : editFormData.operatingFee === 0 ? 'ÜCRETSİZ' : `${formatCurrency(editFormData.operatingFee, isPresentationMode)} TL / Ay`}
+                                                        {isUnallocated ? '-' : editFormData.operatingFee < 1.01 ? 'ÜCRETSİZ' : `${formatCurrency(editFormData.operatingFee, isPresentationMode)} TL / Ay`}
                                                     </div>
                                                 )}
                                             </div>
@@ -1941,11 +1965,27 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                     )}
                 </div>
 
+                {/* Lease Results Information */}
                 <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3 shrink-0">
                     {activeTab === 'INFO' ? (
                         isEditMode ? (
                             <>
-                                <Button variant="ghost" onClick={() => setIsEditMode(false)} className="text-xs font-bold text-gray-500 h-9">İptal</Button>
+                                <Button variant="ghost" onClick={() => {
+                                    setIsEditMode(false);
+                                    setEditFormData({
+                                        name: data.company.name,
+                                        sector: data.company.sector,
+                                        businessAreas: data.company.businessAreas || [],
+                                        managerName: data.company.managerName,
+                                        managerPhone: data.company.managerPhone,
+                                        managerEmail: data.company.managerEmail,
+                                        employeeCount: data.company.employeeCount,
+                                        startDate: isoToDisplay(data.lease.startDate),
+                                        endDate: isoToDisplay(data.lease.endDate),
+                                        operatingFee: data.lease.operatingFee || 400,
+                                        monthlyRent: data.lease.monthlyRent || 0
+                                    });
+                                }} className="text-xs font-bold text-gray-500 h-9">İptal</Button>
                                 <Button onClick={handleSaveCompanyInfo} className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 h-9">
                                     <Save className="w-3.5 h-3.5 mr-2" /> Değişiklikleri Kaydet
                                 </Button>
@@ -1958,8 +1998,36 @@ export const CompanyDetailModal: React.FC<{ data: ExtendedLeaseData; onClose: ()
                                 </Button>
                             </>
                         )
+                    ) : activeTab === 'WORK_AREAS' ? (
+                        <>
+                            {hasBusinessAreaChanges && (
+                                <Button
+                                    onClick={handleSaveBusinessAreas}
+                                    disabled={isSavingBusinessAreas}
+                                    className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 h-9 shrink-0 flex items-center pr-4"
+                                >
+                                    {isSavingBusinessAreas ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-2" />}
+                                    {isSavingBusinessAreas ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+                                </Button>
+                            )}
+                            <Button variant="ghost" onClick={onClose} className="text-xs font-bold text-gray-500 h-9 shrink-0">Kapat</Button>
+                        </>
+                    ) : activeTab === 'CONTRACTS' ? (
+                        <>
+                            {hasNewDocuments && (
+                                <Button
+                                    onClick={handleSaveDocuments}
+                                    disabled={isSavingDocs}
+                                    className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 h-9 shrink-0 flex items-center pr-4"
+                                >
+                                    {isSavingDocs ? <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-2" />}
+                                    {isSavingDocs ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+                                </Button>
+                            )}
+                            <Button variant="ghost" onClick={onClose} className="text-xs font-bold text-gray-500 h-9 shrink-0">Kapat</Button>
+                        </>
                     ) : (
-                        <Button variant="ghost" onClick={onClose} className="text-xs font-bold text-gray-500 h-9">Kapat</Button>
+                        <Button variant="ghost" onClick={onClose} className="text-xs font-bold text-gray-500 h-9 shrink-0">Kapat</Button>
                     )}
                 </div>
 
@@ -2073,6 +2141,10 @@ export const LeasingManagement: React.FC = () => {
     const [filterFloor, setFilterFloor] = useState('ALL');
     const [filterSector, setFilterSector] = useState('ALL');
     const [filterStatus, setFilterStatus] = useState('ALL');
+    const [filterMinRentPerSqm, setFilterMinRentPerSqm] = useState('');
+    const [filterMaxRentPerSqm, setFilterMaxRentPerSqm] = useState('');
+    const [filterMinArea, setFilterMinArea] = useState('');
+    const [filterMaxArea, setFilterMaxArea] = useState('');
 
     // Async data states
     const [allLeases, setAllLeases] = useState<ExtendedLeaseData[]>([]);
@@ -2089,6 +2161,7 @@ export const LeasingManagement: React.FC = () => {
         }
         if (location.state?.selectedBusinessTags) {
             setSelectedBusinessTags(location.state.selectedBusinessTags);
+            setIsBusinessTagFilterOpen(true);
         }
     }, [location.state]);
 
@@ -2096,6 +2169,7 @@ export const LeasingManagement: React.FC = () => {
     const [selectedBusinessTags, setSelectedBusinessTags] = useState<string[]>([]);
     const [businessTagSearch, setBusinessTagSearch] = useState('');
     const [showBusinessTagDropdown, setShowBusinessTagDropdown] = useState(false);
+    const [isBusinessTagFilterOpen, setIsBusinessTagFilterOpen] = useState(false);
     const businessTagInputRef = useRef<HTMLInputElement>(null);
 
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -2201,6 +2275,21 @@ export const LeasingManagement: React.FC = () => {
 
         if (filterStatus === 'UNALLOCATED') res = res.filter(l => l.lease.id === 'PENDING' || !l.lease.unitId);
         if (filterStatus === 'ALLOCATED') res = res.filter(l => l.lease.id !== 'PENDING' && !!l.lease.unitId);
+        if (filterStatus === 'FREE') {
+            res = res.filter(l => {
+                let unitPrice = 0;
+                if (l.lease.id === 'PENDING' || !l.lease.unitId) {
+                    if (l.lease.unitPricePerSqm !== undefined && l.lease.unitPricePerSqm !== null) {
+                        unitPrice = l.lease.unitPricePerSqm;
+                    } else if (l.company.contractTemplate) {
+                        unitPrice = l.company.contractTemplate.rentPerSqM || 0;
+                    }
+                } else if (l.unit && l.unit.areaSqM > 0) {
+                    unitPrice = l.lease.monthlyRent / l.unit.areaSqM;
+                }
+                return unitPrice < 1.01;
+            });
+        }
 
         // New: Filter by Selected Business Area Tags (AND Logic: Match ALL selected tags)
         if (selectedBusinessTags.length > 0) {
@@ -2219,8 +2308,42 @@ export const LeasingManagement: React.FC = () => {
                 (l.company.businessAreas && l.company.businessAreas.some(tag => tag && tag.toLowerCase().includes(term)))
             );
         }
+        // Filter by min/max Rent Per Sqm
+        if (filterMinRentPerSqm || filterMaxRentPerSqm) {
+            res = res.filter(l => {
+                let unitPrice = 0;
+                if (l.lease.id === 'PENDING' || !l.lease.unitId) {
+                    if (l.lease.unitPricePerSqm !== undefined && l.lease.unitPricePerSqm !== null) {
+                        unitPrice = l.lease.unitPricePerSqm;
+                    } else if (l.company.contractTemplate) {
+                        unitPrice = l.company.contractTemplate.rentPerSqM || 0;
+                    }
+                } else if (l.unit && l.unit.areaSqM > 0) {
+                    unitPrice = l.lease.monthlyRent / l.unit.areaSqM;
+                }
+
+                if (filterMinRentPerSqm && !isNaN(parseFloat(filterMinRentPerSqm)) && unitPrice < parseFloat(filterMinRentPerSqm)) return false;
+                if (filterMaxRentPerSqm && !isNaN(parseFloat(filterMaxRentPerSqm)) && unitPrice > parseFloat(filterMaxRentPerSqm)) return false;
+
+                return true;
+            });
+        }
+
+        // Filter by min/max Area
+        if (filterMinArea || filterMaxArea) {
+            res = res.filter(l => {
+                let area = 0;
+                if (l.unit && l.unit.areaSqM > 0) {
+                    area = l.unit.areaSqM;
+                }
+                if (filterMinArea && !isNaN(parseFloat(filterMinArea)) && area < parseFloat(filterMinArea)) return false;
+                if (filterMaxArea && !isNaN(parseFloat(filterMaxArea)) && area > parseFloat(filterMaxArea)) return false;
+                return true;
+            });
+        }
+
         return res;
-    }, [debouncedSearch, filterCampus, filterBlock, filterFloor, filterSector, filterStatus, allLeases, selectedBusinessTags]);
+    }, [debouncedSearch, filterCampus, filterBlock, filterFloor, filterSector, filterStatus, allLeases, selectedBusinessTags, filterMinRentPerSqm, filterMaxRentPerSqm, filterMinArea, filterMaxArea]);
 
     const campusOptions = useMemo(() => [{ value: 'ALL', label: 'Tüm Kampüsler' }, ...campuses.map(c => ({ value: c.id, label: c.name }))], [campuses]);
     const blockOptions = useMemo(() => {
@@ -2245,8 +2368,19 @@ export const LeasingManagement: React.FC = () => {
         return [{ value: 'ALL', label: 'Tüm Katlar' }, ...sortedFloors.map(f => ({ value: f, label: `${f}. Kat` }))];
     }, [blocks, filterCampus, filterBlock]);
 
-    const sectorOptions = useMemo(() => [{ value: 'ALL', label: 'Tüm Sektörler' }, ...sectors.map(s => ({ value: s, label: s }))], [sectors]);
-    const statusOptions = [{ value: 'ALL', label: 'Tüm Durumlar' }, { value: 'ALLOCATED', label: 'Tahsis Edildi' }, { value: 'UNALLOCATED', label: 'Tahsis Edilmedi' }];
+    const uniqueSectorList = useMemo(() => {
+        const unique = new Set<string>();
+        allLeases.forEach(l => {
+            if (l.company.sector && l.company.sector !== 'Belirtilmedi') {
+                unique.add(l.company.sector);
+            }
+        });
+        sectors.forEach(s => unique.add(s));
+        return Array.from(unique).sort();
+    }, [allLeases, sectors]);
+
+    const sectorOptions = useMemo(() => [{ value: 'ALL', label: 'Tüm Sektörler' }, ...uniqueSectorList.map(s => ({ value: s, label: s }))], [uniqueSectorList]);
+    const statusOptions = [{ value: 'ALL', label: 'Tüm Durumlar' }, { value: 'ALLOCATED', label: 'Tahsis Edildi' }, { value: 'UNALLOCATED', label: 'Tahsis Edilmedi' }, { value: 'FREE', label: 'Ücretsiz' }];
 
     // Derive all unique business area tags from current leases
     const availableBusinessTags = useMemo(() => {
@@ -2295,72 +2429,7 @@ export const LeasingManagement: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Business Area Tag Filter Section */}
-                <div className="relative w-full z-50">
-                    <div className="flex flex-col gap-2 bg-gradient-to-r from-indigo-50 to-white p-5 rounded-2xl border-2 border-indigo-200 shadow-md transition-all hover:shadow-lg focus-within:ring-4 focus-within:ring-indigo-500/20 focus-within:border-indigo-400">
-                        <label className="text-xs font-black text-indigo-700 uppercase tracking-wider flex items-center gap-2 ml-1">
-                            <div className="p-1 bg-indigo-200 rounded text-indigo-700">
-                                <Tag className="w-4 h-4" />
-                            </div>
-                            İş Alanı Etiketleri
-                        </label>
-
-                        <div className="flex flex-wrap items-center gap-2">
-                            {selectedBusinessTags.map(tag => (
-                                <span key={tag} className="flex items-center gap-1 pl-3 pr-1 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-sm animate-in fade-in zoom-in-95 ring-1 ring-indigo-500 ring-offset-1">
-                                    {tag}
-                                    <button
-                                        onClick={() => setSelectedBusinessTags(prev => prev.filter(t => t !== tag))}
-                                        className="p-0.5 hover:bg-white/20 rounded-md transition-colors"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                </span>
-                            ))}
-
-                            <div className="relative flex-1 min-w-[200px] group">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 group-focus-within:text-indigo-600 transition-colors" />
-                                <input
-                                    ref={businessTagInputRef}
-                                    type="text"
-                                    className="w-full pl-10 pr-4 py-2 bg-white/60 border border-indigo-100 outline-none text-xs font-bold text-gray-900 placeholder:text-indigo-300 h-10 rounded-xl focus:bg-white focus:border-indigo-300 transition-all shadow-sm"
-                                    placeholder="Filtrelemek istediğiniz iş alanı etiketlerini seçin..."
-                                    value={businessTagSearch}
-                                    onChange={e => setBusinessTagSearch(e.target.value)}
-                                    onFocus={() => setShowBusinessTagDropdown(true)}
-                                    onBlur={() => setTimeout(() => setShowBusinessTagDropdown(false), 200)}
-                                />
-                                {showBusinessTagDropdown && (
-                                    <div className="absolute top-full left-0 mt-2 w-full max-w-md bg-white rounded-xl shadow-xl border border-indigo-100 overflow-hidden z-[100] animate-in fade-in slide-in-from-top-2">
-                                        <div className="max-h-[220px] overflow-y-auto custom-scrollbar p-2 bg-slate-50/50">
-                                            {filteredBusinessTags.length > 0 ? (
-                                                filteredBusinessTags.map(tag => {
-                                                    const isSelected = selectedBusinessTags.includes(tag);
-                                                    return (
-                                                        <button
-                                                            key={tag}
-                                                            onMouseDown={(e) => { e.preventDefault(); toggleBusinessTag(tag); }}
-                                                            className={`w-full text-left px-3 py-2.5 mb-1 last:mb-0 rounded-lg text-xs font-bold flex items-center justify-between transition-all ${isSelected ? 'bg-indigo-100 text-indigo-700 shadow-sm border border-indigo-200' : 'bg-white border border-transparent hover:border-indigo-200 text-gray-700 hover:shadow-sm'}`}
-                                                        >
-                                                            <span>{tag}</span>
-                                                            {isSelected && <Check className="w-4 h-4 text-indigo-600" />}
-                                                        </button>
-                                                    );
-                                                })
-                                            ) : (
-                                                <div className="p-4 text-center text-xs text-gray-400 font-medium italic">
-                                                    "{businessTagSearch}" ile eşleşen etiket bulunamadı.
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 p-4 shadow-sm grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
+                <div className="relative z-[60] bg-white/80 backdrop-blur-md rounded-2xl border border-gray-200 p-4 shadow-sm grid grid-cols-2 md:grid-cols-5 gap-4 items-end">
                     <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Kampüs</label>
                         <Dropdown options={campusOptions} value={filterCampus} onChange={(val) => { setFilterCampus(val); setFilterBlock('ALL'); setFilterFloor('ALL'); }} icon={<MapPin size={14} />} className="text-xs" />
@@ -2380,6 +2449,151 @@ export const LeasingManagement: React.FC = () => {
                     <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Durum</label>
                         <Dropdown options={statusOptions} value={filterStatus} onChange={setFilterStatus} icon={<Filter size={14} />} className="text-xs" />
+                    </div>
+                </div>
+
+                {/* Business Area Tag Filter Section & Min/Max Rent Section */}
+                <div className={`relative w-full z-50 flex flex-col gap-4 ${(!isBusinessTagFilterOpen && selectedBusinessTags.length === 0) ? 'md:flex-row items-start md:items-center' : 'items-start'}`}>
+                    {!isBusinessTagFilterOpen && selectedBusinessTags.length === 0 ? (
+                        <button
+                            onClick={() => setIsBusinessTagFilterOpen(true)}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-white rounded-xl border border-gray-200 shadow-sm hover:border-indigo-300 hover:bg-indigo-50 transition-colors text-xs font-bold text-gray-700 whitespace-nowrap"
+                        >
+                            <Tag className="w-4 h-4 text-indigo-500" /> İş Alanına Göre Filtrele
+                        </button>
+                    ) : (
+                        <div className="flex flex-col gap-2 bg-gradient-to-r from-indigo-50 to-white p-5 rounded-2xl border-2 border-indigo-200 shadow-md transition-all hover:shadow-lg focus-within:ring-4 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 flex-1 w-full animate-in fade-in slide-in-from-left-4 duration-300">
+                            <div className="flex justify-between items-center mb-1">
+                                <label className="text-xs font-black text-indigo-700 tracking-wider flex items-center gap-2 ml-1">
+                                    <div className="p-1 bg-indigo-200 rounded text-indigo-700">
+                                        <Tag className="w-4 h-4" />
+                                    </div>
+                                    İŞ ALANI ETİKETLERİ
+                                </label>
+                                <button
+                                    onClick={() => {
+                                        setIsBusinessTagFilterOpen(false);
+                                        setSelectedBusinessTags([]);
+                                    }}
+                                    className="p-1.5 text-indigo-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                                    title="Filtreyi Kapat ve Temizle"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                {selectedBusinessTags.map(tag => (
+                                    <span key={tag} className="flex items-center gap-1 pl-3 pr-1 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-sm animate-in fade-in zoom-in-95 ring-1 ring-indigo-500 ring-offset-1">
+                                        {tag}
+                                        <button
+                                            onClick={() => setSelectedBusinessTags(prev => prev.filter(t => t !== tag))}
+                                            className="p-0.5 hover:bg-white/20 rounded-md transition-colors"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </span>
+                                ))}
+
+                                <div className="relative flex-1 min-w-[200px] group">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 group-focus-within:text-indigo-600 transition-colors" />
+                                    <input
+                                        ref={businessTagInputRef}
+                                        type="text"
+                                        className="w-full pl-10 pr-4 py-2 bg-white/60 border border-indigo-100 outline-none text-xs font-bold text-gray-900 placeholder:text-indigo-300 h-10 rounded-xl focus:bg-white focus:border-indigo-300 transition-all shadow-sm"
+                                        placeholder="Filtrelemek istediğiniz iş alanı etiketlerini seçin..."
+                                        value={businessTagSearch}
+                                        onChange={e => setBusinessTagSearch(e.target.value)}
+                                        onFocus={() => setShowBusinessTagDropdown(true)}
+                                        onBlur={() => setTimeout(() => setShowBusinessTagDropdown(false), 200)}
+                                    />
+                                    {showBusinessTagDropdown && (
+                                        <div className="absolute top-full left-0 mt-2 w-full max-w-md bg-white rounded-xl shadow-xl border border-indigo-100 overflow-hidden z-[100] animate-in fade-in slide-in-from-top-2">
+                                            <div className="max-h-[220px] overflow-y-auto custom-scrollbar p-2 bg-slate-50/50">
+                                                {filteredBusinessTags.length > 0 ? (
+                                                    filteredBusinessTags.map(tag => {
+                                                        const isSelected = selectedBusinessTags.includes(tag);
+                                                        return (
+                                                            <button
+                                                                key={tag}
+                                                                onMouseDown={(e) => { e.preventDefault(); toggleBusinessTag(tag); }}
+                                                                className={`w-full text-left px-3 py-2.5 mb-1 last:mb-0 rounded-lg text-xs font-bold flex items-center justify-between transition-all ${isSelected ? 'bg-indigo-100 text-indigo-700 shadow-sm border border-indigo-200' : 'bg-white border border-transparent hover:border-indigo-200 text-gray-700 hover:shadow-sm'}`}
+                                                            >
+                                                                <span>{tag}</span>
+                                                                {isSelected && <Check className="w-4 h-4 text-indigo-600" />}
+                                                            </button>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <div className="p-4 text-center text-xs text-gray-400 font-medium italic">
+                                                        "{businessTagSearch}" ile eşleşen etiket bulunamadı.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Range Filters Container (Rent & Area) */}
+                    <div className="flex flex-wrap gap-4 shrink-0 transition-all">
+                        {/* Rent Per SqM Range Filter */}
+                        <div className={`flex items-stretch bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden focus-within:ring-4 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 focus-within:z-10 transition-all ${(!isBusinessTagFilterOpen && selectedBusinessTags.length === 0) ? 'max-w-[400px]' : 'shrink-0'}`}>
+                            <div className="flex items-center px-4 py-2 border-r border-gray-100 min-w-max">
+                                <span className="text-[11px] font-bold text-gray-500 tracking-wider flex items-center gap-1.5 uppercase">
+                                    <span className="p-0.5 bg-gray-50 border border-gray-200 rounded text-gray-400 font-serif font-bold text-[10px] w-4 h-4 flex items-center justify-center">₺</span>
+                                    M² BİRİM KİRA (TL)
+                                </span>
+                            </div>
+                            <div className="flex items-center w-full px-2">
+                                <input
+                                    type="number"
+                                    placeholder="Min"
+                                    className="w-[80px] md:w-[90px] bg-transparent border-none py-2 text-[13px] font-bold outline-none text-center placeholder:font-normal text-gray-900 placeholder:text-gray-400 focus:text-indigo-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={filterMinRentPerSqm}
+                                    onChange={(e) => setFilterMinRentPerSqm(e.target.value)}
+                                />
+                                <div className="h-3 w-px bg-gray-200 mx-1"></div>
+                                <input
+                                    type="number"
+                                    placeholder="Max"
+                                    className="w-[80px] md:w-[90px] bg-transparent border-none py-2 text-[13px] font-bold outline-none text-center placeholder:font-normal text-gray-900 placeholder:text-gray-400 focus:text-indigo-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={filterMaxRentPerSqm}
+                                    onChange={(e) => setFilterMaxRentPerSqm(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Area Range Filter */}
+                        <div className={`flex items-stretch bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden focus-within:ring-4 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 focus-within:z-10 transition-all ${(!isBusinessTagFilterOpen && selectedBusinessTags.length === 0) ? 'max-w-[400px]' : 'shrink-0'}`}>
+                            <div className="flex items-center px-4 py-2 border-r border-gray-100 min-w-max">
+                                <span className="text-[11px] font-bold text-gray-500 tracking-wider flex items-center gap-1.5 uppercase">
+                                    <span className="p-0.5 bg-gray-50 border border-gray-200 rounded text-gray-400 font-serif font-bold text-[10px] w-4 h-4 flex items-center justify-center">
+                                        <Layers className="w-2.5 h-2.5" />
+                                    </span>
+                                    KİRALANAN ALAN (M²)
+                                </span>
+                            </div>
+                            <div className="flex items-center w-full px-2">
+                                <input
+                                    type="number"
+                                    placeholder="Min"
+                                    className="w-[95px] md:w-[105px] bg-transparent border-none py-2 text-[13px] font-bold outline-none text-center placeholder:font-normal text-gray-900 placeholder:text-gray-400 focus:text-indigo-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={filterMinArea}
+                                    onChange={(e) => setFilterMinArea(e.target.value)}
+                                />
+                                <div className="h-3 w-px bg-gray-200 mx-1"></div>
+                                <input
+                                    type="number"
+                                    placeholder="Max"
+                                    className="w-[95px] md:w-[105px] bg-transparent border-none py-2 text-[13px] font-bold outline-none text-center placeholder:font-normal text-gray-900 placeholder:text-gray-400 focus:text-indigo-600 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    value={filterMaxArea}
+                                    onChange={(e) => setFilterMaxArea(e.target.value)}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2402,7 +2616,7 @@ export const LeasingManagement: React.FC = () => {
                         <div className="col-span-2 text-right text-[10px] font-black text-black uppercase tracking-wider pr-8">Karne Puanı</div>
                     </div>
 
-                    <div ref={listTableRef} className="h-[560px] sm:h-[calc(100vh-380px)]">
+                    <div ref={listTableRef} className="h-[750px] sm:h-[calc(100vh-250px)] min-h-[700px]">
                         <AnimatedList
                             items={filteredLeases}
                             renderItem={(item: ExtendedLeaseData, index, isSelected) => (
@@ -2431,8 +2645,15 @@ export const LeasingManagement: React.FC = () => {
                 onClose={() => setSelectedLease(null)}
                 onUpdate={async () => {
                     await fetchData();
-                    const updated = allLeases.find(l => l.company.id === selectedLease.company.id);
-                    if (updated) setSelectedLease(updated);
+                    try {
+                        const updatedData = await api.getAllLeaseDetails();
+                        const updated = updatedData.find((l: any) => l.company.id === selectedLease.company.id);
+                        if (updated) setSelectedLease(updated);
+                    } catch (e) {
+                        // Fallback to checking allLeases if fetch fails
+                        const updated = allLeases.find(l => l.company.id === selectedLease.company.id);
+                        if (updated) setSelectedLease(updated);
+                    }
                 }}
             />}
 

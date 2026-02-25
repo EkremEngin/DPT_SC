@@ -1,6 +1,6 @@
-
 import React, { useRef, useState, useEffect, useCallback, ReactNode, UIEvent, memo } from 'react';
 import { motion, useInView } from 'motion/react';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import './AnimatedList.css';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -15,7 +15,7 @@ interface AnimatedItemProps {
 const AnimatedItem: React.FC<AnimatedItemProps> = memo(({ children, delay = 0, index, onMouseEnter, onClick }) => {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { amount: 0.1, once: false });
-  
+
   return (
     <motion.div
       ref={ref}
@@ -55,12 +55,11 @@ const AnimatedList = <T,>({
   displayScrollbar = true,
   initialSelectedIndex = -1
 }: AnimatedListProps<T>) => {
-  const listRef = useRef<HTMLDivElement>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(initialSelectedIndex);
-  const [keyboardNav, setKeyboardNav] = useState<boolean>(false);
   const [topGradientOpacity, setTopGradientOpacity] = useState<number>(0);
   const [bottomGradientOpacity, setBottomGradientOpacity] = useState<number>(1);
-  
+
   // Theme context to adjust gradient colors dynamically
   const { backgroundMode } = useTheme();
   const isDark = backgroundMode === 'DARK';
@@ -70,8 +69,7 @@ const AnimatedList = <T,>({
   const style = { '--gradient-bg': gradientColor } as React.CSSProperties;
 
   const handleItemMouseEnter = useCallback((index: number) => {
-    // Optional: Only select on hover if you want strict hover selection
-    // setSelectedIndex(index); 
+    // Optional
   }, []);
 
   const handleItemClick = useCallback(
@@ -84,8 +82,8 @@ const AnimatedList = <T,>({
     [onItemSelect]
   );
 
-  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement;
+  const handleScroll = useCallback((e: UIEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement;
     const { scrollTop, scrollHeight, clientHeight } = target;
     setTopGradientOpacity(Math.min(scrollTop / 50, 1));
     const bottomDistance = scrollHeight - (scrollTop + clientHeight);
@@ -97,12 +95,18 @@ const AnimatedList = <T,>({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)) {
         e.preventDefault();
-        setKeyboardNav(true);
-        setSelectedIndex(prev => Math.min(prev + 1, items.length - 1));
+        setSelectedIndex(prev => {
+          const next = Math.min(prev + 1, items.length - 1);
+          virtuosoRef.current?.scrollToIndex({ index: next, align: 'center', behavior: 'smooth' });
+          return next;
+        });
       } else if (e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)) {
         e.preventDefault();
-        setKeyboardNav(true);
-        setSelectedIndex(prev => Math.max(prev - 1, 0));
+        setSelectedIndex(prev => {
+          const next = Math.max(prev - 1, 0);
+          virtuosoRef.current?.scrollToIndex({ index: next, align: 'center', behavior: 'smooth' });
+          return next;
+        });
       } else if (e.key === 'Enter') {
         if (selectedIndex >= 0 && selectedIndex < items.length) {
           e.preventDefault();
@@ -117,32 +121,15 @@ const AnimatedList = <T,>({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [items, selectedIndex, onItemSelect, enableArrowNavigation]);
 
-  useEffect(() => {
-    if (!keyboardNav || selectedIndex < 0 || !listRef.current) return;
-    const container = listRef.current;
-    const selectedItem = container.querySelector(`[data-index="${selectedIndex}"]`) as HTMLElement | null;
-    if (selectedItem) {
-      const extraMargin = 50;
-      const containerScrollTop = container.scrollTop;
-      const containerHeight = container.clientHeight;
-      const itemTop = selectedItem.offsetTop;
-      const itemBottom = itemTop + selectedItem.offsetHeight;
-      if (itemTop < containerScrollTop + extraMargin) {
-        container.scrollTo({ top: itemTop - extraMargin, behavior: 'smooth' });
-      } else if (itemBottom > containerScrollTop + containerHeight - extraMargin) {
-        container.scrollTo({
-          top: itemBottom - containerHeight + extraMargin,
-          behavior: 'smooth'
-        });
-      }
-    }
-    setKeyboardNav(false);
-  }, [selectedIndex, keyboardNav]);
-
   return (
-    <div className={`scroll-list-container ${className}`} style={style}>
-      <div ref={listRef} className={`scroll-list ${!displayScrollbar ? 'no-scrollbar' : ''}`} onScroll={handleScroll}>
-        {items.map((item, index) => (
+    <div className={`scroll-list-container ${className}`} style={{ ...style, height: '100%', position: 'relative' }}>
+      <Virtuoso
+        ref={virtuosoRef}
+        className={`scroll-list ${!displayScrollbar ? 'no-scrollbar' : ''}`}
+        style={{ height: '100%', width: '100%' }}
+        data={items}
+        onScroll={handleScroll}
+        itemContent={(index, item) => (
           <AnimatedItem
             key={index}
             delay={0}
@@ -154,8 +141,8 @@ const AnimatedList = <T,>({
               {renderItem(item, index, selectedIndex === index)}
             </div>
           </AnimatedItem>
-        ))}
-      </div>
+        )}
+      />
       {showGradients && (
         <>
           <div className="top-gradient" style={{ opacity: topGradientOpacity }}></div>
